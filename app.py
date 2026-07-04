@@ -82,7 +82,6 @@ def index():
 
 @app.route("/dashboard")
 def dashboard():
-    # ¡Aquí arreglamos el error 404! Esta ruta alimenta las gráficas
     total_simulaciones = Simulacion.query.count()
     total_rutas = Ruta.query.count()
     aeropuertos_activos = Aeropuerto.query.filter_by(estado="Abierto").count()
@@ -143,16 +142,22 @@ def rutas():
     aeropuertos = Aeropuerto.query.all()
     simulaciones = Simulacion.query.order_by(Simulacion.id.desc()).limit(15).all()
     
+    # Variables de control para mantener seleccionadas las opciones
+    origen_sel = None
+    destino_sel = None
+    criterio_sel = "Menor Distancia"
+    
     if request.method == "POST":
-        orig_id = int(request.form.get("origen"))
-        dest_id = int(request.form.get("destino"))
-        criterio = request.form.get("criterio")
+        origen_sel = int(request.form.get("origen"))
+        destino_sel = int(request.form.get("destino"))
+        criterio_sel = request.form.get("criterio")
         
-        if orig_id == dest_id:
+        if origen_sel == destino_sel:
             return render_template("rutas.html", aeropuertos=aeropuertos, simulaciones=simulaciones, 
-                                   error="El origen y destino no pueden ser el mismo.")
+                                   error="El origen y destino no pueden ser el mismo.",
+                                   origen_sel=origen_sel, destino_sel=destino_sel, criterio_sel=criterio_sel)
         
-        nodos, rutas_opt, msj = dijkstra(orig_id, dest_id, criterio)
+        nodos, rutas_opt, msj = dijkstra(origen_sel, destino_sel, criterio_sel)
         
         if nodos:
             dist_total = round(sum(r.distancia for r in rutas_opt), 2)
@@ -160,25 +165,28 @@ def rutas():
             costo_total = round(sum(r.costo for r in rutas_opt), 2)
             consumo_total = round(sum(r.consumo for r in rutas_opt), 2)
             
-            origen_obj = Aeropuerto.query.get(orig_id)
-            destino_obj = Aeropuerto.query.get(dest_id)
+            origen_obj = Aeropuerto.query.get(origen_sel)
+            destino_obj = Aeropuerto.query.get(destino_sel)
             nombres_ruta = " ➔ ".join([Aeropuerto.query.get(n).codigo for n in nodos])
             
             coordenadas = [{"lat": Aeropuerto.query.get(n).latitud, "lon": Aeropuerto.query.get(n).longitud, "info": Aeropuerto.query.get(n).codigo} for n in nodos]
             
             sim = Simulacion(origen=f"{origen_obj.ciudad} ({origen_obj.codigo})", destino=f"{destino_obj.ciudad} ({destino_obj.codigo})",
-                             criterio=criterio, distancia_total=dist_total, tiempo_total=tiempo_total,
+                             criterio=criterio_sel, distancia_total=dist_total, tiempo_total=tiempo_total,
                              costo_total=costo_total, consumo_total=consumo_total, nodos_ruta=nombres_ruta, estado_red=msj)
             db.session.add(sim)
             db.session.commit()
             
             simulaciones = Simulacion.query.order_by(Simulacion.id.desc()).limit(15).all()
             return render_template("rutas.html", aeropuertos=aeropuertos, simulaciones=simulaciones,
-                                   mapa_ruta=json.dumps(coordenadas), error=msj if "Alerta" in msj else None, detalle=sim)
+                                   mapa_ruta=json.dumps(coordenadas), error=msj if "Alerta" in msj else None, detalle=sim,
+                                   origen_sel=origen_sel, destino_sel=destino_sel, criterio_sel=criterio_sel)
         else:
-            return render_template("rutas.html", aeropuertos=aeropuertos, simulaciones=simulaciones, error=msj)
+            return render_template("rutas.html", aeropuertos=aeropuertos, simulaciones=simulaciones, error=msj,
+                                   origen_sel=origen_sel, destino_sel=destino_sel, criterio_sel=criterio_sel)
             
-    return render_template("rutas.html", aeropuertos=aeropuertos, simulaciones=simulaciones, mapa_ruta="[]")
+    return render_template("rutas.html", aeropuertos=aeropuertos, simulaciones=simulaciones, mapa_ruta="[]",
+                           origen_sel=origen_sel, destino_sel=destino_sel, criterio_sel=criterio_sel)
 
 def inicializar_bd():
     if Aeropuerto.query.count() == 0:

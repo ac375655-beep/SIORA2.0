@@ -16,7 +16,7 @@
             <select name="origen" class="form-select" required>
                 <option value="">Seleccione Origen...</option>
                 {% for a in aeropuertos %}
-                <option value="{{ a.id }}">{{ a.ciudad }} ({{ a.codigo }})</option>
+                <option value="{{ a.id }}" {% if origen_sel == a.id %}selected{% endif %}>{{ a.ciudad }} ({{ a.codigo }})</option>
                 {% endfor %}
             </select>
         </div>
@@ -25,16 +25,16 @@
             <select name="destino" class="form-select" required>
                 <option value="">Seleccione Destino...</option>
                 {% for a in aeropuertos %}
-                <option value="{{ a.id }}">{{ a.ciudad }} ({{ a.codigo }})</option>
+                <option value="{{ a.id }}" {% if destino_sel == a.id %}selected{% endif %}>{{ a.ciudad }} ({{ a.codigo }})</option>
                 {% endfor %}
             </select>
         </div>
         <div class="col-md-4">
             <label class="form-label text-light">Criterio de Optimización</label>
             <select name="criterio" class="form-select" required>
-                <option value="Menor Distancia">Menor Distancia (Km)</option>
-                <option value="Menor Tiempo">Menor Tiempo de Vuelo (Min)</option>
-                <option value="Menor Costo">Menor Costo Operativo ($)</option>
+                <option value="Menor Distancia" {% if criterio_sel == 'Menor Distancia' %}selected{% endif %}>Menor Distancia (Km)</option>
+                <option value="Menor Tiempo" {% if criterio_sel == 'Menor Tiempo' %}selected{% endif %}>Menor Tiempo de Vuelo (Min)</option>
+                <option value="Menor Costo" {% if criterio_sel == 'Menor Costo' %}selected{% endif %}>Menor Costo Operativo ($)</option>
             </select>
         </div>
         <div class="col-12 text-center mt-4">
@@ -62,23 +62,41 @@
                 <strong>📡 Reporte del Sistema:</strong> {{ detalle.estado_red }}
             </div>
             
+            <!-- PANEL DE INDICADORES A 2 FILAS DE 3 COLUMNAS -->
             <div class="row mt-3 text-center">
-                <div class="col-md-3">
+                <!-- Fila 1 -->
+                <div class="col-md-4 mb-3">
                     <small class="text-secondary d-block">Secuencia de Escalas:</small>
                     <span class="text-white fw-bold fs-5">{{ detalle.nodos_ruta }}</span>
                     <br><small class="text-info">{{ detalle.nodos_ruta.split('➔')|length - 1 }} Escalas</small>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-4 mb-3">
                     <small class="text-secondary d-block">Distancia Total:</small>
                     <span class="text-white fw-bold fs-5">{{ detalle.distancia_total }} km</span>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-4 mb-3">
                     <small class="text-secondary d-block">Tiempo Estimado:</small>
                     <span class="text-white fw-bold fs-5">{{ detalle.tiempo_total }} min</span>
                 </div>
-                <div class="col-md-3">
+                
+                <!-- Fila 2 (Nuevos indicadores añadidos) -->
+                <div class="col-md-4 mt-2">
                     <small class="text-secondary d-block">Costo Operativo:</small>
                     <span class="text-white fw-bold fs-5">${{ detalle.costo_total }}</span>
+                </div>
+                <div class="col-md-4 mt-2">
+                    <small class="text-secondary d-block">Consumo de Combustible:</small>
+                    <span class="text-white fw-bold fs-5">{{ detalle.consumo_total }} Gal.</span>
+                </div>
+                <div class="col-md-4 mt-2">
+                    <small class="text-secondary d-block">Estado del Vuelo:</small>
+                    <span class="text-white fw-bold fs-5">
+                        {% if 'Clima Adverso' in detalle.estado_red %}
+                            <span style="color: #ffc107;">⚠️ En Riesgo / Penalizado</span>
+                        {% else %}
+                            <span style="color: #28a745;">✅ Ruta Óptima</span>
+                        {% endif %}
+                    </span>
                 </div>
             </div>
         </div>
