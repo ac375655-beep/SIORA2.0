@@ -1,0 +1,151 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="card p-4 mb-4" style="background-color: #161b22; border: 1px solid #30363d;">
+    <h3 class="text-center mb-4" style="color:#00d4ff;">Simulador de Optimización de Rutas (Dijkstra)</h3>
+    
+    {% if error %}
+    <div class="alert alert-danger shadow" role="alert" style="background-color: transparent; border: 1px solid #dc3545; color: #dc3545;">
+        <strong>⚠️ {{ error }}</strong>
+    </div>
+    {% endif %}
+
+    <form method="POST" class="row g-3">
+        <div class="col-md-4">
+            <label class="form-label text-light">Nodo de Origen</label>
+            <select name="origen" class="form-select" required>
+                <option value="">Seleccione Origen...</option>
+                {% for a in aeropuertos %}
+                <option value="{{ a.id }}">{{ a.ciudad }} ({{ a.codigo }})</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label text-light">Nodo de Destino</label>
+            <select name="destino" class="form-select" required>
+                <option value="">Seleccione Destino...</option>
+                {% for a in aeropuertos %}
+                <option value="{{ a.id }}">{{ a.ciudad }} ({{ a.codigo }})</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label text-light">Criterio de Optimización</label>
+            <select name="criterio" class="form-select" required>
+                <option value="Menor Distancia">Menor Distancia (Km)</option>
+                <option value="Menor Tiempo">Menor Tiempo de Vuelo (Min)</option>
+                <option value="Menor Costo">Menor Costo Operativo ($)</option>
+            </select>
+        </div>
+        <div class="col-12 text-center mt-4">
+            <button type="submit" class="btn btn-neon px-5 py-2 fs-5">✈️ Calcular Ruta Óptima</button>
+        </div>
+    </form>
+</div>
+
+<div class="card p-2 mb-4" style="background-color: #161b22; border: 1px solid #30363d;">
+    <div id="mapa" style="height: 400px; border-radius: 8px; z-index: 1;"></div>
+</div>
+
+{% if detalle %}
+<div class="row mb-4">
+    <div class="col-12">
+        {% set color_alerta = '#ffc107' if 'Clima Adverso' in detalle.estado_red else '#28a745' %}
+        
+        <div class="card p-4 shadow-lg" style="background-color: #0d1117; border: 2px solid {{ color_alerta }};">
+            <h5 style="color:{{ color_alerta }}; border-bottom: 1px solid {{ color_alerta }}; padding-bottom: 10px;">
+                📊 Panel de Monitoreo - Vuelo Actual
+            </h5>
+            
+            <!-- DETALLE Y REPORTE DE CLIMA/RED -->
+            <div class="alert mt-3" style="background-color: transparent; border: 1px solid {{ color_alerta }}; color: {{ color_alerta }};">
+                <strong>📡 Reporte del Sistema:</strong> {{ detalle.estado_red }}
+            </div>
+            
+            <div class="row mt-3 text-center">
+                <div class="col-md-3">
+                    <small class="text-secondary d-block">Secuencia de Escalas:</small>
+                    <span class="text-white fw-bold fs-5">{{ detalle.nodos_ruta }}</span>
+                    <br><small class="text-info">{{ detalle.nodos_ruta.split('➔')|length - 1 }} Escalas</small>
+                </div>
+                <div class="col-md-3">
+                    <small class="text-secondary d-block">Distancia Total:</small>
+                    <span class="text-white fw-bold fs-5">{{ detalle.distancia_total }} km</span>
+                </div>
+                <div class="col-md-3">
+                    <small class="text-secondary d-block">Tiempo Estimado:</small>
+                    <span class="text-white fw-bold fs-5">{{ detalle.tiempo_total }} min</span>
+                </div>
+                <div class="col-md-3">
+                    <small class="text-secondary d-block">Costo Operativo:</small>
+                    <span class="text-white fw-bold fs-5">${{ detalle.costo_total }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Inicializar mapa
+    var map = L.map('mapa').setView([-1.8312, -78.1834], 6);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { 
+        attribution: '&copy; OpenStreetMap' 
+    }).addTo(map);
+    
+    var rutaDatos = {{ mapa_ruta | safe }};
+    
+    if (rutaDatos && rutaDatos.length > 0) {
+        var puntos = [];
+        
+        // Colocar marcadores (Aeropuertos)
+        rutaDatos.forEach(function(nodo) {
+            var latLng = [nodo.lat, nodo.lon];
+            puntos.push(latLng);
+            L.marker(latLng).addTo(map).bindPopup("<b style='color:black;'>" + nodo.info + "</b>");
+        });
+        
+        // Dibujar la línea de la ruta
+        var polyline = L.polyline(puntos, {color: '#00d4ff', weight: 4, dashArray: '10, 10'}).addTo(map);
+        map.fitBounds(polyline.getBounds());
+
+        // LÓGICA DEL AVIÓN VOLANDO
+        var avionIcon = L.divIcon({
+            html: '<div style="font-size: 26px;">✈️</div>',
+            className: 'avion-animado',
+            iconSize: [26, 26],
+            iconAnchor: [13, 13]
+        });
+        
+        var avionMarker = L.marker(puntos[0], {icon: avionIcon}).addTo(map);
+        var i = 0;
+        
+        function animarAvion() {
+            if (i < puntos.length - 1) {
+                var start = puntos[i];
+                var end = puntos[i+1];
+                var step = 0;
+                var numSteps = 60; // Número de pasos para suavizar la animación
+                
+                var intervalo = setInterval(function() {
+                    if (step >= numSteps) {
+                        clearInterval(intervalo);
+                        i++;
+                        animarAvion(); // Volar al siguiente nodo
+                    } else {
+                        var lat = start[0] + (end[0] - start[0]) * (step / numSteps);
+                        var lng = start[1] + (end[1] - start[1]) * (step / numSteps);
+                        avionMarker.setLatLng([lat, lng]);
+                        step++;
+                    }
+                }, 20); // Velocidad en milisegundos
+            }
+        }
+        
+        // Iniciar el vuelo medio segundo después de cargar el mapa
+        setTimeout(animarAvion, 500);
+    }
+</script>
+{% endblock %}

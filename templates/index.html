@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="text-center mt-5">
+    <h1 class="display-3 fw-bold text-info">SIORA 2.0</h1>
+    <h4 class="text-light mb-5">SISTEMA DE OPTIMIZACIÓN DE RUTAS AÉREAS</h4>
+    
+    <h5 class="text-info mb-4">👥 EQUIPO DE DESARROLLO</h5>
+    <div class="row justify-content-center">
+        <!-- Lista de integrantes con extensión .png -->
+        {% set equipo = [
+            {'nombre': 'Antonio Contreras', 'edad': '22', 'carrera': 'Ingeniería Industrial', 'foto': 'antonio.png'},
+            {'nombre': 'Anahi Perez', 'edad': '21', 'carrera': 'Ingeniería Industrial', 'foto': 'anahi.png'},
+            {'nombre': 'Angie Cobacango', 'edad': '22', 'carrera': 'Ingeniería Industrial', 'foto': 'angie.png'},
+            {'nombre': 'Deysi Yamberla', 'edad': '21', 'carrera': 'Ingeniería Industrial', 'foto': 'deysi.png'}
+        ] %}
+        
+        {% for miembro in equipo %}
+        <div class="col-md-3">
+            <!-- Tarjeta que muestra toda la información directamente -->
+            <div class="card p-4 mb-4 shadow" style="background-color: #161b22; border: 1px solid #30363d; transition: transform 0.3s;" 
+                 onmouseover="this.style.transform='translateY(-10px)'" 
+                 onmouseout="this.style.transform='translateY(0px)'">
+                
+                <!-- Foto del integrante circular y visible -->
+                <div class="text-center mb-3">
+                    <img src="{{ url_for('static', filename='images/' + miembro.foto) }}" alt="Foto de {{ miembro.nombre }}" class="rounded-circle" width="120" height="120" style="border: 3px solid #00d4ff; object-fit: cover; background-color: #0d1117;">
+                </div>
+                
+                <!-- Detalles del integrante -->
+                <h5 class="text-info fw-bold mb-2">{{ miembro.nombre }}</h5>
+                <p class="text-light mb-1" style="font-size: 0.95rem;"><strong>Edad:</strong> {{ miembro.edad }} años</p>
+                <p class="text-light mb-1" style="font-size: 0.95rem;"><strong>Carrera:</strong> {{ miembro.carrera }}</p>
+                <hr style="border-color: #30363d; margin: 10px 0;">
+                <p class="text-secondary mb-0" style="font-size: 0.85rem;">Universidad Central del Ecuador</p>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

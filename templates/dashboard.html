@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row text-center mb-4"><h2 class="text-info">Dashboard de Operaciones</h2></div>
+
+<div class="row mb-4 text-center">
+    <div class="col-md-4"><div class="card p-3 shadow-sm border-info"><h5>Nodos Activos (Aeropuertos)</h5><h2 class="text-white">{{ nodos }}</h2></div></div>
+    <div class="col-md-4"><div class="card p-3 shadow-sm border-info"><h5>Aristas de Red (Rutas)</h5><h2 class="text-white">{{ total_rutas }}</h2></div></div>
+    <div class="col-md-4"><div class="card p-3 shadow-sm border-warning"><h5>Simulaciones Ejecutadas</h5><h2 class="text-warning">{{ total_sim }}</h2></div></div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card p-4">
+            <h5 class="text-center text-info mb-3">Uso de Criterios de Optimización</h5>
+            <canvas id="miGrafico"></canvas>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card p-4">
+            <h5 class="text-center text-info mb-3">Últimas Rutas Evaluadas</h5>
+            <table class="table table-dark table-hover mt-2">
+                <thead>
+                    <tr><th>Origen ➔ Destino</th><th>Costo Total</th></tr>
+                </thead>
+                <tbody>
+                    {% for s in ultimas_sim %}
+                    <tr>
+                        <td>{{ s.nodos_ruta }}</td>
+                        <td class="text-warning fw-bold">${{ s.costo_total }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    var ctx = document.getElementById('miGrafico').getContext('2d');
+    new Chart(ctx, { 
+        type: 'doughnut', 
+        data: { 
+            labels: Object.keys({{ grafico_criterios | safe }}), 
+            datasets: [{ 
+                data: Object.values({{ grafico_criterios | safe }}), 
+                backgroundColor: ['#00d4ff', '#ffc107', '#28a745'],
+                borderWidth: 0
+            }] 
+        },
+        options: { plugins: { legend: { labels: { color: 'white' } } } }
+    });
+</script>
+{% endblock %}
