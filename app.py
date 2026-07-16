@@ -160,10 +160,33 @@ def rutas():
         nodos, rutas_opt, msj = dijkstra(origen_sel, destino_sel, criterio_sel)
         
         if nodos:
-            dist_total = round(sum(r.distancia for r in rutas_opt), 2)
-            tiempo_total = round(sum(r.tiempo for r in rutas_opt), 2)
-            costo_total = round(sum(r.costo for r in rutas_opt), 2)
-            consumo_total = round(sum(r.consumo for r in rutas_opt), 2)
+            # Calcular indicadores finales aplicando penalizaciones
+            dist_total = 0
+            tiempo_total = 0
+            costo_total = 0
+            consumo_total = 0
+
+            for r in rutas_opt:
+                distancia = r.distancia
+                tiempo = r.tiempo
+                costo = r.costo
+                consumo = r.consumo
+
+                if r.estado == "Clima Adverso":
+                    distancia *= 1.05
+                    tiempo *= 1.35
+                    costo *= 1.20
+                    consumo *= 1.25
+
+                dist_total += distancia
+                tiempo_total += tiempo
+                costo_total += costo
+                consumo_total += consumo
+
+            dist_total = round(dist_total, 2)
+            tiempo_total = round(tiempo_total, 2)
+            costo_total = round(costo_total, 2)
+            consumo_total = round(consumo_total, 2)
             
             origen_obj = Aeropuerto.query.get(origen_sel)
             destino_obj = Aeropuerto.query.get(destino_sel)
