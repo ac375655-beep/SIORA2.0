@@ -1,84 +1,96 @@
 {% extends 'base.html' %}
 
 {% block content %}
+<div class="mb-4 text-center">
+    <div class="eyebrow mb-1">TORRE DE CONTROL</div>
+    <h3 class="display-heading mb-0">Gestión de la Red Aérea</h3>
+</div>
+
 <div class="row mb-4">
     <div class="col-12">
-        <div class="card p-4">
-            <h4 style="color:#00d4ff;">Gestión Dinámica de Nodos (Aeropuertos)</h4>
-            <p class="text-secondary small">Cierra un aeropuerto para simular escenarios de restricción. El algoritmo buscará rutas alternativas.</p>
-            <table class="table table-dark table-hover mt-2">
-                <thead>
-                    <tr>
-                        <th>Código</th>
-                        <th>Ciudad</th>
-                        <th>Nombre</th>
-                        <th>Estado Actual</th>
-                        <th>Acción</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for a in aeropuertos %}
-                    <tr>
-                        <td><strong>{{ a.codigo }}</strong></td>
-                        <td>{{ a.ciudad }}</td>
-                        <td>{{ a.nombre }}</td>
-                        <td>
-                            {% if a.estado == 'Abierto' %}
-                                <span class="badge bg-success">Abierto</span>
-                            {% else %}
-                                <span class="badge bg-danger">Cerrado</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <a href="/toggle_aeropuerto/{{ a.id }}" class="btn btn-sm btn-outline-warning">Cambiar Estado</a>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        <div class="card p-4 panel-glow">
+            <h5 style="color: var(--cyan);">Nodos · Aeropuertos</h5>
+            <p class="text-secondary small mb-3">Cierra un aeropuerto para simular escenarios de restricción. El algoritmo buscará rutas alternativas automáticamente.</p>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Código</th>
+                            <th>Ciudad</th>
+                            <th>Nombre</th>
+                            <th>Estado actual</th>
+                            <th>Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for a in aeropuertos %}
+                        <tr>
+                            <td class="data-readout fw-bold" style="color: var(--cyan);">{{ a.codigo }}</td>
+                            <td>{{ a.ciudad }}</td>
+                            <td class="text-secondary">{{ a.nombre }}</td>
+                            <td>
+                                {% if a.estado == 'Abierto' %}
+                                    <span class="badge-estado badge-abierto">Abierto</span>
+                                {% else %}
+                                    <span class="badge-estado badge-cerrado">Cerrado</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <a href="/toggle_aeropuerto/{{ a.id }}" class="btn btn-sm btn-neon">Cambiar estado</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
 
 <div class="row mb-4">
     <div class="col-12">
-        <div class="card p-4">
-            <h4 style="color:#00d4ff;">Gestión Dinámica de Aristas (Rutas)</h4>
-            <p class="text-secondary small">Simula condiciones de clima adverso (penalización matemática) o inhabilita una ruta por completo.</p>
-            <table class="table table-dark table-hover mt-2">
-                <thead>
-                    <tr>
-                        <th>Ruta (Origen - Destino)</th>
-                        <th>Distancia (km)</th>
-                        <th>Estado Actual</th>
-                        <th>Cambiar Condición</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for r in rutas %}
-                    <tr>
-                        <td><strong>{{ r.origen.codigo }} ➔ {{ r.destino.codigo }}</strong></td>
-                        <td>{{ r.distancia }}</td>
-                        <td>
-                            {% if r.estado == 'Activa' %} <span class="badge bg-success">Activa</span>
-                            {% elif r.estado == 'Clima Adverso' %} <span class="badge bg-warning text-dark">Clima Adverso</span>
-                            {% else %} <span class="badge bg-danger">Inhabilitada</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <form action="/estado_ruta/{{ r.id }}" method="POST" class="d-flex gap-2">
-                                <select name="estado" class="form-select form-select-sm" style="width: 150px;">
-                                    <option value="Activa" {% if r.estado == 'Activa' %}selected{% endif %}>Activa</option>
-                                    <option value="Clima Adverso" {% if r.estado == 'Clima Adverso' %}selected{% endif %}>Clima Adverso</option>
-                                    <option value="Inhabilitada" {% if r.estado == 'Inhabilitada' %}selected{% endif %}>Inhabilitada</option>
-                                </select>
-                                <button type="submit" class="btn btn-sm btn-neon">Aplicar</button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        <div class="card p-4 panel-glow">
+            <h5 style="color: var(--cyan);">Arcos · Rutas</h5>
+            <p class="text-secondary small mb-3">Simula clima adverso (penaliza tiempo, costo y combustible +50%) o inhabilita una ruta por completo.</p>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Ruta</th>
+                            <th>Distancia</th>
+                            <th>Estado actual</th>
+                            <th>Cambiar condición</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in rutas %}
+                        <tr>
+                            <td class="data-readout fw-bold">{{ r.origen.codigo }} ➔ {{ r.destino.codigo }}</td>
+                            <td class="data-readout text-secondary">{{ r.distancia }} km</td>
+                            <td>
+                                {% if r.estado == 'Activa' %}
+                                    <span class="badge-estado badge-activa">Activa</span>
+                                {% elif r.estado == 'Clima Adverso' %}
+                                    <span class="badge-estado badge-clima">Clima adverso</span>
+                                {% else %}
+                                    <span class="badge-estado badge-inhabilitada">Inhabilitada</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <form action="/estado_ruta/{{ r.id }}" method="POST" class="d-flex gap-2">
+                                    <select name="estado" class="form-select form-select-sm" style="width: 160px;">
+                                        <option value="Activa" {% if r.estado == 'Activa' %}selected{% endif %}>Activa</option>
+                                        <option value="Clima Adverso" {% if r.estado == 'Clima Adverso' %}selected{% endif %}>Clima Adverso</option>
+                                        <option value="Inhabilitada" {% if r.estado == 'Inhabilitada' %}selected{% endif %}>Inhabilitada</option>
+                                    </select>
+                                    <button type="submit" class="btn btn-sm btn-neon">Aplicar</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>

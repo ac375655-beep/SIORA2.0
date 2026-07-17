@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AEROVEX</title>
 
-    <!-- Ícono de la pestaña -->
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/avion.png') }}">
 
     <!-- Bootstrap 5 -->
@@ -14,28 +13,200 @@
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
+    <!-- Tipografía: Rajdhani (titulares tipo HUD), Inter (texto), JetBrains Mono (lecturas numéricas tipo FMS) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
     <style>
-        body { background-color: #0d1117; color: #e6edf3; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        .navbar-custom { background-color: #161b22; border-bottom: 2px solid #00d4ff; }
-        .nav-link { color: #00d4ff !important; font-weight: bold; }
-        .card { background-color: #161b22; border: 1px solid #30363d; border-radius: 10px; }
-        .form-control, .form-select { background-color: #0d1117; color: #ffffff !important; border: 1px solid #30363d; }
-        .form-control:focus, .form-select:focus { background-color: #0d1117; border-color: #00d4ff; box-shadow: 0 0 5px rgba(0, 212, 255, 0.5); }
-        .btn-neon { background-color: transparent; color: #00d4ff; border: 1px solid #00d4ff; transition: all 0.3s; }
-        .btn-neon:hover { background-color: #00d4ff; color: #000; }
-        table { color: #e6edf3 !important; }
-        thead th { color: #00d4ff !important; }
-        .text-light { color: #e6edf3 !important; }
-        .text-secondary { color: #8b949e !important; }
+        :root {
+            --bg-void: #060a14;
+            --bg-panel: #0d1424;
+            --bg-panel-2: #121a2e;
+            --border: #1e293b;
+            --border-soft: #182236;
+            --cyan: #22d3ee;
+            --cyan-dim: #0e7490;
+            --amber: #fbbf24;
+            --green: #34d399;
+            --red: #f87171;
+            --grey: #64748b;
+            --text: #e7ecf5;
+            --text-dim: #8b98b5;
+            --font-display: 'Rajdhani', sans-serif;
+            --font-body: 'Inter', 'Segoe UI', sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+
+        body {
+            background-color: var(--bg-void);
+            color: var(--text);
+            font-family: var(--font-body);
+            background-image:
+                radial-gradient(ellipse 80% 50% at 50% -10%, rgba(34,211,238,0.08), transparent),
+                repeating-linear-gradient(0deg, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px, transparent 1px, transparent 48px),
+                repeating-linear-gradient(90deg, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px, transparent 1px, transparent 48px);
+            min-height: 100vh;
+        }
+
+        h1, h2, h3, h4, h5, .display-heading {
+            font-family: var(--font-display);
+            font-weight: 700;
+            letter-spacing: 0.02em;
+        }
+
+        .font-mono, .data-readout { font-family: var(--font-mono); color: var(--text); }
+        .card, .card * { color: var(--text); }
+
+        .gauge {
+            background: var(--bg-panel-2);
+            border: 1px solid var(--border-soft);
+            border-top: 2px solid var(--cyan);
+            border-radius: 10px;
+            padding: 0.9rem 0.6rem;
+            text-align: center;
+        }
+        .gauge-warn { border-top-color: var(--amber); }
+        .gauge-label { color: var(--text-dim) !important; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; display: block; margin-bottom: 4px; }
+        .gauge-value {
+            font-family: var(--font-mono); font-weight: 700; font-size: 1.7rem; line-height: 1;
+            color: var(--text) !important; text-shadow: 0 0 18px rgba(34,211,238,0.25);
+            display: block;
+        }
+        .gauge-warn .gauge-value { text-shadow: 0 0 18px rgba(251,191,36,0.3); }
+        .gauge-unit { color: var(--text-dim) !important; font-size: 0.75rem; }
+        .gauge-delta { color: var(--amber) !important; font-weight: 600; font-size: 0.78rem; display: block; margin-top: 3px; }
+
+        .eyebrow {
+            font-family: var(--font-display);
+            font-weight: 600;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--cyan);
+            font-size: 0.78rem;
+        }
+
+        /* ---- Navbar ---- */
+        .navbar-custom {
+            background-color: rgba(13,20,36,0.92);
+            border-bottom: 1px solid var(--border);
+            box-shadow: 0 1px 0 rgba(34,211,238,0.25), 0 8px 24px rgba(0,0,0,0.35);
+            backdrop-filter: blur(6px);
+        }
+        .navbar-brand {
+            font-family: var(--font-display);
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            color: var(--cyan) !important;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .status-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--green);
+            box-shadow: 0 0 8px var(--green);
+            animation: pulse-dot 2s infinite ease-in-out;
+        }
+        @keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+        .nav-link {
+            color: var(--text-dim) !important;
+            font-weight: 600;
+            font-family: var(--font-display);
+            letter-spacing: 0.04em;
+            padding: 0.5rem 0.9rem !important;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+        .nav-link:hover, .nav-link.active { color: var(--cyan) !important; background: rgba(34,211,238,0.08); }
+
+        /* ---- Cards / panels ---- */
+        .card {
+            background-color: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.03) inset;
+        }
+        .panel-glow { position: relative; overflow: hidden; }
+        .panel-glow::before {
+            content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+            background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+        }
+
+        /* Tablas: Bootstrap 5 pinta el texto/fondo con estas variables --bs-table-*.
+           Si no se sobreescriben aquí, el tema oscuro queda peleando con los
+           valores por defecto de Bootstrap (pensados para fondo claro) y el
+           texto se ve apagado/gris sobre el fondo oscuro. */
+        .table {
+            --bs-table-color: var(--text);
+            --bs-table-bg: transparent;
+            --bs-table-border-color: var(--border-soft);
+            --bs-table-striped-color: var(--text);
+            --bs-table-striped-bg: rgba(255,255,255,0.025);
+            --bs-table-hover-color: var(--text);
+            --bs-table-hover-bg: rgba(34,211,238,0.07);
+            color: var(--text) !important;
+        }
+        .table > :not(caption) > * > * { color: var(--text) !important; box-shadow: none !important; }
+        thead th { color: var(--cyan) !important; font-family: var(--font-display); letter-spacing: 0.05em; text-transform: uppercase; font-size: 0.8rem; border-bottom: 1px solid var(--border) !important; padding-bottom: 0.75rem; }
+        tbody td { border-color: var(--border-soft) !important; padding-top: 0.7rem; padding-bottom: 0.7rem; }
+        .text-light { color: var(--text) !important; }
+        .text-secondary { color: var(--text-dim) !important; }
+
+        h5, h6 { color: var(--text); }
+        .section-divider { height: 1px; background: linear-gradient(90deg, var(--cyan), transparent); margin: 0.25rem 0 1.25rem 0; opacity: 0.5; }
+
+        .form-control, .form-select {
+            background-color: var(--bg-void); color: var(--text) !important;
+            border: 1px solid var(--border);
+        }
+        .form-control:focus, .form-select:focus {
+            background-color: var(--bg-void); border-color: var(--cyan);
+            box-shadow: 0 0 0 0.2rem rgba(34,211,238,0.18);
+        }
+        .form-label { font-family: var(--font-display); font-weight: 600; letter-spacing: 0.03em; color: var(--text-dim); font-size: 0.85rem; text-transform: uppercase; }
+
+        .btn-neon {
+            background-color: transparent; color: var(--cyan); border: 1px solid var(--cyan);
+            font-family: var(--font-display); font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+            transition: all 0.25s;
+        }
+        .btn-neon:hover { background-color: var(--cyan); color: #041017; box-shadow: 0 0 18px rgba(34,211,238,0.5); }
+
+        table { color: var(--text) !important; }
+        thead th { color: var(--cyan) !important; font-family: var(--font-display); letter-spacing: 0.04em; text-transform: uppercase; font-size: 0.82rem; border-bottom: 1px solid var(--border) !important; }
+        tbody td { border-color: var(--border-soft) !important; }
+        .text-light { color: var(--text) !important; }
+        .text-secondary { color: var(--text-dim) !important; }
+
+        /* ---- Badges de estado (semántica compartida en toda la app) ---- */
+        .badge-estado {
+            display: inline-flex; align-items: center; gap: 6px;
+            font-family: var(--font-display); font-weight: 600; letter-spacing: 0.04em;
+            text-transform: uppercase; font-size: 0.78rem;
+            padding: 0.32rem 0.7rem; border-radius: 20px; border: 1px solid transparent;
+        }
+        .badge-estado::before { content: ""; width: 7px; height: 7px; border-radius: 50%; }
+        .badge-abierto, .badge-activa { background: rgba(52,211,153,0.12); color: var(--green); border-color: rgba(52,211,153,0.35); }
+        .badge-abierto::before, .badge-activa::before { background: var(--green); box-shadow: 0 0 6px var(--green); }
+        .badge-cerrado, .badge-inhabilitada { background: rgba(248,113,113,0.12); color: var(--red); border-color: rgba(248,113,113,0.35); }
+        .badge-cerrado::before, .badge-inhabilitada::before { background: var(--red); box-shadow: 0 0 6px var(--red); }
+        .badge-clima { background: rgba(251,191,36,0.14); color: var(--amber); border-color: rgba(251,191,36,0.4); animation: badge-warn 1.8s infinite ease-in-out; }
+        .badge-clima::before { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+        @keyframes badge-warn { 0%,100% { box-shadow: 0 0 0 rgba(251,191,36,0); } 50% { box-shadow: 0 0 12px rgba(251,191,36,0.35); } }
+
+        ::selection { background: rgba(34,211,238,0.3); }
+        a { color: var(--cyan); }
+
+        @media (prefers-reduced-motion: reduce) {
+            .status-dot, .badge-clima { animation: none; }
+        }
     </style>
 </head>
 
 <body>
-    <nav class="navbar navbar-expand-lg navbar-custom mb-4">
+    <nav class="navbar navbar-expand-lg navbar-custom mb-4 sticky-top">
         <div class="container">
-            <a class="navbar-brand text-info fw-bold" href="/">✈ AEROVEX</a>
+            <a class="navbar-brand" href="/"><span class="status-dot"></span>✈ AEROVEX</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon" style="background-color: #00d4ff; border-radius: 3px;"></span>
+                <span class="navbar-toggler-icon" style="background-color: #22d3ee; border-radius: 3px;"></span>
             </button>
 
             <div class="collapse navbar-collapse" id="navbarNav">

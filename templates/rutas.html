@@ -1,105 +1,167 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="card p-4 mb-4" style="background-color: #161b22; border: 1px solid #30363d;">
-    <h3 class="text-center mb-4" style="color:#00d4ff;">Simulador de Optimización de Rutas (Dijkstra)</h3>
-    
+<div class="mb-4 text-center">
+    <div class="eyebrow mb-1">CONSOLA DE VUELO</div>
+    <h3 class="display-heading mb-0">Simulador de Optimización de Rutas</h3>
+    <div class="text-secondary" style="font-size:0.9rem;">Algoritmo de Dijkstra · Investigación de Operaciones</div>
+</div>
+
+<div class="card p-4 mb-4 panel-glow">
     {% if error %}
-    <div class="alert alert-danger shadow" role="alert" style="background-color: transparent; border: 1px solid #dc3545; color: #dc3545;">
-        <strong>⚠️ {{ error }}</strong>
+    <div class="alert mt-0 mb-3" role="alert" style="background-color: rgba(248,113,113,0.1); border: 1px solid var(--red); color: var(--red);">
+        <strong>⚠ {{ error }}</strong>
     </div>
     {% endif %}
 
-    <form method="POST" class="row g-3">
+    <form method="POST" class="row g-3 align-items-end">
         <div class="col-md-4">
-            <label class="form-label text-light">Nodo de Origen</label>
+            <label class="form-label">Nodo de origen</label>
             <select name="origen" class="form-select" required>
-                <option value="">Seleccione Origen...</option>
+                <option value="">Seleccione origen...</option>
                 {% for a in aeropuertos %}
                 <option value="{{ a.id }}" {% if origen_sel == a.id %}selected{% endif %}>{{ a.ciudad }} ({{ a.codigo }})</option>
                 {% endfor %}
             </select>
         </div>
         <div class="col-md-4">
-            <label class="form-label text-light">Nodo de Destino</label>
+            <label class="form-label">Nodo de destino</label>
             <select name="destino" class="form-select" required>
-                <option value="">Seleccione Destino...</option>
+                <option value="">Seleccione destino...</option>
                 {% for a in aeropuertos %}
                 <option value="{{ a.id }}" {% if destino_sel == a.id %}selected{% endif %}>{{ a.ciudad }} ({{ a.codigo }})</option>
                 {% endfor %}
             </select>
         </div>
         <div class="col-md-4">
-            <label class="form-label text-light">Criterio de Optimización</label>
+            <label class="form-label">Criterio de optimización</label>
             <select name="criterio" class="form-select" required>
-                <option value="Menor Distancia" {% if criterio_sel == 'Menor Distancia' %}selected{% endif %}>Menor Distancia (Km)</option>
-                <option value="Menor Tiempo" {% if criterio_sel == 'Menor Tiempo' %}selected{% endif %}>Menor Tiempo de Vuelo (Min)</option>
-                <option value="Menor Costo" {% if criterio_sel == 'Menor Costo' %}selected{% endif %}>Menor Costo Operativo ($)</option>
+                <option value="Menor Distancia" {% if criterio_sel == 'Menor Distancia' %}selected{% endif %}>Menor distancia (km)</option>
+                <option value="Menor Tiempo" {% if criterio_sel == 'Menor Tiempo' %}selected{% endif %}>Menor tiempo de vuelo (min)</option>
+                <option value="Menor Costo" {% if criterio_sel == 'Menor Costo' %}selected{% endif %}>Menor costo operativo ($)</option>
             </select>
         </div>
         <div class="col-12 text-center mt-4">
-            <button type="submit" class="btn btn-neon px-5 py-2 fs-5">✈️ Calcular Ruta Óptima</button>
+            <button type="submit" class="btn btn-neon px-5 py-2 fs-5">✈ Calcular ruta óptima</button>
         </div>
     </form>
 </div>
 
-<div class="card p-2 mb-4" style="background-color: #161b22; border: 1px solid #30363d;">
-    <div id="mapa" style="height: 400px; border-radius: 8px; z-index: 1;"></div>
+<div class="card p-2 mb-4 position-relative" style="overflow:hidden;">
+    <div class="position-absolute top-0 start-0 m-3 eyebrow" style="z-index:500; background:rgba(6,10,20,0.75); padding:4px 10px; border-radius:6px; border:1px solid var(--border);">
+        RADAR · RED AÉREA
+    </div>
+    <div id="mapa" style="height: 420px; border-radius: 8px; z-index: 1;"></div>
 </div>
 
 {% if detalle %}
 <div class="row mb-4">
     <div class="col-12">
-        {% set color_alerta = '#ffc107' if 'Clima Adverso' in detalle.estado_red else '#28a745' %}
-        
-        <div class="card p-4 shadow-lg" style="background-color: #0d1117; border: 2px solid {{ color_alerta }};">
-            <h5 style="color:{{ color_alerta }}; border-bottom: 1px solid {{ color_alerta }}; padding-bottom: 10px;">
-                📊 Panel de Monitoreo - Vuelo Actual
-            </h5>
-            
-            <!-- DETALLE Y REPORTE DE CLIMA/RED -->
-            <div class="alert mt-3" style="background-color: transparent; border: 1px solid {{ color_alerta }}; color: {{ color_alerta }};">
-                <strong>📡 Reporte del Sistema:</strong> {{ detalle.estado_red }}
+        {% set en_riesgo = hay_clima_adverso %}
+        {% set color_alerta = 'var(--amber)' if en_riesgo else 'var(--green)' %}
+
+        <div class="card p-4 panel-glow" style="border-color: {{ 'rgba(251,191,36,0.45)' if en_riesgo else 'rgba(52,211,153,0.4)' }};">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2" style="border-bottom: 1px solid var(--border); padding-bottom: 12px;">
+                <h5 class="mb-0" style="color:{{ color_alerta }};">📊 Panel de monitoreo · vuelo actual</h5>
+                <span class="badge-estado {{ 'badge-clima' if en_riesgo else 'badge-activa' }}">
+                    {{ 'Clima adverso en ruta' if en_riesgo else 'Condiciones normales' }}
+                </span>
             </div>
-            
-            <!-- PANEL DE INDICADORES A 2 FILAS DE 3 COLUMNAS -->
-            <div class="row mt-3 text-center">
-                <!-- Fila 1 -->
-                <div class="col-md-4 mb-3">
-                    <small class="text-secondary d-block">Secuencia de Escalas:</small>
-                    <span class="text-white fw-bold fs-5">{{ detalle.nodos_ruta }}</span>
-                    <br><small class="text-info">{{ detalle.nodos_ruta.split('➔')|length - 1 }} Escalas</small>
+
+            <div class="alert mt-3 mb-2" style="background-color: transparent; border: 1px solid {{ color_alerta }}; color: {{ color_alerta }};">
+                <strong>📡 Reporte del sistema:</strong> {{ detalle.estado_red }}
+            </div>
+
+            <div class="text-center mb-3">
+                <small class="text-secondary d-block">Secuencia de vuelo</small>
+                <span class="data-readout fw-bold fs-5" style="color: var(--text);">{{ detalle.nodos_ruta }}</span>
+            </div>
+
+            <div class="row g-3 text-center">
+                <div class="col-6 col-md-4 col-lg-2">
+                    <div class="gauge">
+                        <small class="gauge-label">Escalas</small>
+                        <span class="gauge-value">{{ escalas }}</span>
+                    </div>
                 </div>
-                <div class="col-md-4 mb-3">
-                    <small class="text-secondary d-block">Distancia Total:</small>
-                    <span class="text-white fw-bold fs-5">{{ detalle.distancia_total }} km</span>
+                <div class="col-6 col-md-4 col-lg-2">
+                    <div class="gauge">
+                        <small class="gauge-label">Distancia</small>
+                        <span class="gauge-value">{{ detalle.distancia_total }}</span>
+                        <small class="gauge-unit">km</small>
+                    </div>
                 </div>
-                <div class="col-md-4 mb-3">
-                    <small class="text-secondary d-block">Tiempo Estimado:</small>
-                    <span class="text-white fw-bold fs-5">{{ detalle.tiempo_total }} min</span>
+                <div class="col-6 col-md-4 col-lg-2">
+                    <div class="gauge {{ 'gauge-warn' if delta_tiempo else '' }}">
+                        <small class="gauge-label">Tiempo</small>
+                        <span class="gauge-value">{{ detalle.tiempo_total }}</span>
+                        <small class="gauge-unit">min</small>
+                        {% if delta_tiempo %}<small class="gauge-delta">+{{ delta_tiempo }} min</small>{% endif %}
+                    </div>
                 </div>
-                
-                <!-- Fila 2 (Nuevos indicadores añadidos) -->
-                <div class="col-md-4 mt-2">
-                    <small class="text-secondary d-block">Costo Operativo:</small>
-                    <span class="text-white fw-bold fs-5">${{ detalle.costo_total }}</span>
+                <div class="col-6 col-md-4 col-lg-2">
+                    <div class="gauge {{ 'gauge-warn' if delta_costo else '' }}">
+                        <small class="gauge-label">Costo</small>
+                        <span class="gauge-value">${{ detalle.costo_total }}</span>
+                        {% if delta_costo %}<small class="gauge-delta">+${{ delta_costo }}</small>{% endif %}
+                    </div>
                 </div>
-                <div class="col-md-4 mt-2">
-                    <small class="text-secondary d-block">Consumo de Combustible:</small>
-                    <span class="text-white fw-bold fs-5">{{ detalle.consumo_total }} Gal.</span>
+                <div class="col-6 col-md-4 col-lg-2">
+                    <div class="gauge {{ 'gauge-warn' if delta_consumo else '' }}">
+                        <small class="gauge-label">Combustible</small>
+                        <span class="gauge-value">{{ detalle.consumo_total }}</span>
+                        <small class="gauge-unit">gal</small>
+                        {% if delta_consumo %}<small class="gauge-delta">+{{ delta_consumo }} gal</small>{% endif %}
+                    </div>
                 </div>
-                <div class="col-md-4 mt-2">
-                    <small class="text-secondary d-block">Estado del Vuelo:</small>
-                    <span class="text-white fw-bold fs-5">
-                        {% if 'Clima Adverso' in detalle.estado_red %}
-                            <span style="color: #ffc107;">⚠️ En Riesgo / Penalizado</span>
+                <div class="col-6 col-md-4 col-lg-2">
+                    <div class="gauge {{ 'gauge-warn' if en_riesgo else '' }}">
+                        <small class="gauge-label">Estado</small>
+                        {% if en_riesgo %}
+                            <span class="fw-bold" style="color: var(--amber);">⚠ Penalizado</span>
                         {% else %}
-                            <span style="color: #28a745;">✅ Ruta Óptima</span>
+                            <span class="fw-bold" style="color: var(--green);">✅ Óptima</span>
                         {% endif %}
-                    </span>
+                    </div>
                 </div>
             </div>
+            {% if en_riesgo %}
+            <div class="mt-3 text-secondary" style="font-size:0.85rem;">
+                El tramo con clima adverso se penaliza +50% en tiempo, costo y combustible (holding pattern / maniobras de evasión). La distancia física no cambia.
+            </div>
+            {% endif %}
         </div>
+    </div>
+</div>
+{% endif %}
+
+{% if simulaciones %}
+<div class="card p-4">
+    <h6 class="eyebrow mb-3">Historial de simulaciones recientes</h6>
+    <div class="table-responsive">
+        <table class="table table-borderless align-middle mb-0">
+            <thead><tr><th>Ruta</th><th>Criterio</th><th>Dist.</th><th>Tiempo</th><th>Costo</th><th>Estado</th></tr></thead>
+            <tbody>
+                {% for s in simulaciones %}
+                <tr>
+                    <td class="data-readout">{{ s.nodos_ruta }}</td>
+                    <td class="text-secondary">{{ s.criterio }}</td>
+                    <td class="data-readout">{{ s.distancia_total }} km</td>
+                    <td class="data-readout">{{ s.tiempo_total }} min</td>
+                    <td class="data-readout">${{ s.costo_total }}</td>
+                    <td>
+                        {% if 'Clima Adverso' in s.estado_red %}
+                        <span class="badge-estado badge-clima">Clima</span>
+                        {% elif 'Alerta' in s.estado_red %}
+                        <span class="badge-estado badge-cerrado">Alerta</span>
+                        {% else %}
+                        <span class="badge-estado badge-activa">Normal</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
 {% endif %}
@@ -107,62 +169,89 @@
 
 {% block scripts %}
 <script>
-    // Inicializar mapa
-    var map = L.map('mapa').setView([-1.8312, -78.1834], 6);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { 
-        attribution: '&copy; OpenStreetMap' 
+    var map = L.map('mapa', { zoomControl: true }).setView([-1.8312, -78.1834], 6);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap'
     }).addTo(map);
-    
+
     var rutaDatos = {{ mapa_ruta | safe }};
-    
+
+    function calcularRumbo(lat1, lon1, lat2, lon2) {
+        var toRad = function(d){ return d * Math.PI / 180; };
+        var toDeg = function(r){ return r * 180 / Math.PI; };
+        var dLon = toRad(lon2 - lon1);
+        var y = Math.sin(dLon) * Math.cos(toRad(lat2));
+        var x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) - Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLon);
+        var brng = toDeg(Math.atan2(y, x));
+        return (brng + 360) % 360;
+    }
+
     if (rutaDatos && rutaDatos.length > 0) {
         var puntos = [];
-        
-        // Colocar marcadores (Aeropuertos)
-        rutaDatos.forEach(function(nodo) {
+
+        rutaDatos.forEach(function(nodo, idx) {
             var latLng = [nodo.lat, nodo.lon];
             puntos.push(latLng);
-            L.marker(latLng).addTo(map).bindPopup("<b style='color:black;'>" + nodo.info + "</b>");
+            var esClimaEntrante = nodo.clima;
+            var icono = L.divIcon({
+                html: '<div style="width:12px;height:12px;border-radius:50%;background:' + (esClimaEntrante ? '#fbbf24' : '#22d3ee') + ';box-shadow:0 0 8px ' + (esClimaEntrante ? '#fbbf24' : '#22d3ee') + ';border:2px solid #060a14;"></div>',
+                className: '', iconSize: [12,12], iconAnchor: [6,6]
+            });
+            L.marker(latLng, {icon: icono}).addTo(map)
+                .bindPopup("<b style='color:#0a0e1a;'>" + nodo.info + "</b>" + (esClimaEntrante ? "<br><span style='color:#b45309;'>⚠ Clima adverso en este tramo</span>" : ""));
         });
-        
-        // Dibujar la línea de la ruta
-        var polyline = L.polyline(puntos, {color: '#00d4ff', weight: 4, dashArray: '10, 10'}).addTo(map);
-        map.fitBounds(polyline.getBounds());
 
-        // LÓGICA DEL AVIÓN VOLANDO
+        // Dibujar cada tramo por separado: cian normal, ámbar punteado si hay clima adverso
+        for (var i = 0; i < puntos.length - 1; i++) {
+            var conClima = rutaDatos[i + 1].clima;
+            L.polyline([puntos[i], puntos[i+1]], {
+                color: conClima ? '#fbbf24' : '#22d3ee',
+                weight: 4,
+                dashArray: conClima ? '4, 8' : '10, 6',
+                opacity: 0.9
+            }).addTo(map);
+        }
+
+        var bounds = L.latLngBounds(puntos);
+        map.fitBounds(bounds, {padding: [30, 30]});
+
+        // Avión animado: se orienta según el rumbo real de cada tramo
         var avionIcon = L.divIcon({
-            html: '<div style="font-size: 26px;">✈️</div>',
+            html: '<div id="avion-rot" style="font-size: 26px; transform: rotate(0deg); transition: transform 0.3s;">✈️</div>',
             className: 'avion-animado',
             iconSize: [26, 26],
             iconAnchor: [13, 13]
         });
-        
+
         var avionMarker = L.marker(puntos[0], {icon: avionIcon}).addTo(map);
         var i = 0;
-        
+
         function animarAvion() {
             if (i < puntos.length - 1) {
                 var start = puntos[i];
                 var end = puntos[i+1];
+                var rumbo = calcularRumbo(start[0], start[1], end[0], end[1]);
+                var el = document.getElementById('avion-rot');
+                if (el) el.style.transform = 'rotate(' + (rumbo - 45) + 'deg)';
+
                 var step = 0;
-                var numSteps = 60; // Número de pasos para suavizar la animación
-                
+                var numSteps = 60;
+
                 var intervalo = setInterval(function() {
                     if (step >= numSteps) {
                         clearInterval(intervalo);
                         i++;
-                        animarAvion(); // Volar al siguiente nodo
+                        animarAvion();
                     } else {
                         var lat = start[0] + (end[0] - start[0]) * (step / numSteps);
                         var lng = start[1] + (end[1] - start[1]) * (step / numSteps);
                         avionMarker.setLatLng([lat, lng]);
                         step++;
                     }
-                }, 20); // Velocidad en milisegundos
+                }, 20);
             }
         }
-        
-        // Iniciar el vuelo medio segundo después de cargar el mapa
+
         setTimeout(animarAvion, 500);
     }
 </script>
