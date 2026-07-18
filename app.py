@@ -1,8 +1,19 @@
 import json
 import heapq
-from flask import Flask, render_template, request, redirect, url_for
+import random
+from io import BytesIO
+from datetime import datetime
+from flask import Flask, render_template, request, redirect, url_for, send_file
 from config import Config
 from models import db, Aeropuerto, Ruta, Simulacion
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import cm
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+import openpyxl
+from openpyxl.styles import Font, PatternFill
+from openpyxl.utils import get_column_letter
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -221,6 +232,124 @@ def rutas():
                            origen_sel=origen_sel, destino_sel=destino_sel, criterio_sel=criterio_sel)
 
 
+@app.route("/simulador3d")
+def simulador3d():
+    # Página EXPERIMENTAL y aparte del simulador principal: reutiliza el mismo
+    # dijkstra() ya probado (misma lógica, mismos datos), solo cambia cómo se
+    # visualiza. Si esta vista falla, /rutas no se ve afectado en nada.
+    origen_id = request.args.get("origen", type=int)
+    destino_id = request.args.get("destino", type=int)
+    criterio = request.args.get("criterio", "Menor Distancia")
+
+    if not origen_id or not destino_id:
+        return redirect(url_for("rutas"))
+
+    nodos, rutas_opt, msj = dijkstra(origen_id, destino_id, criterio)
+    if not nodos:
+        return redirect(url_for("rutas"))
+
+    puntos_3d = []
+    for i, n in enumerate(nodos):
+        a = Aeropuerto.query.get(n)
+        clima = (rutas_opt[i - 1].estado == "Clima Adverso") if i > 0 else False
+        puntos_3d.append({"lat": a.latitud, "lon": a.longitud, "info": a.codigo, "ciudad": a.ciudad, "clima": clima})
+
+    return render_template("simulador3d.html", puntos=json.dumps(puntos_3d),
+                           origen_id=origen_id, destino_id=destino_id, criterio=criterio)
+
+
+@app.route("/exportar/pdf")
+def exportar_pdf():
+    simulaciones = Simulacion.query.order_by(Simulacion.id.desc()).all()
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, title="AEROVEX - Reporte de Simulaciones",
+                            topMargin=1.5 * cm, bottomMargin=1.5 * cm)
+    estilos = getSampleStyleSheet()
+    elementos = [
+        Paragraph("AEROVEX", estilos["Title"]),
+        Paragraph("Reporte de Simulaciones - Sistema de Optimización de Rutas Aéreas", estilos["Heading2"]),
+        Paragraph(f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')} &nbsp;&nbsp;|&nbsp;&nbsp; Total de simulaciones: {len(simulaciones)}", estilos["Normal"]),
+        Spacer(1, 0.6 * cm),
+    ]
+
+    if simulaciones:
+        datos = [["Origen", "Destino", "Criterio", "Dist. (km)", "Tiempo (min)", "Costo ($)", "Combust. (gal)"]]
+        for s in simulaciones:
+            datos.append([s.origen, s.destino, s.criterio, str(s.distancia_total), str(s.tiempo_total), f"${s.costo_total}", str(s.consumo_total)])
+
+        tabla = Table(datos, repeatRows=1)
+        tabla.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0d1424')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#eef2f7')]),
+            ('ALIGN', (3, 0), (-1, -1), 'RIGHT'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ]))
+        elementos.append(tabla)
+    else:
+        elementos.append(Paragraph("Aún no hay simulaciones registradas.", estilos["Normal"]))
+
+    doc.build(elementos)
+    buffer.seek(0)
+    return send_file(buffer, as_attachment=True, download_name="aerovex_reporte.pdf", mimetype="application/pdf")
+
+
+@app.route("/exportar/excel")
+def exportar_excel():
+    simulaciones = Simulacion.query.order_by(Simulacion.id.desc()).all()
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Simulaciones"
+
+    encabezados = ["Origen", "Destino", "Criterio", "Distancia (km)", "Tiempo (min)", "Costo ($)", "Combustible (gal)", "Ruta calculada", "Estado del sistema"]
+    ws.append(encabezados)
+    for col in range(1, len(encabezados) + 1):
+        celda = ws.cell(row=1, column=col)
+        celda.font = Font(bold=True, color="FFFFFF")
+        celda.fill = PatternFill(start_color="0D1424", end_color="0D1424", fill_type="solid")
+
+    for s in simulaciones:
+        ws.append([s.origen, s.destino, s.criterio, s.distancia_total, s.tiempo_total, s.costo_total, s.consumo_total, s.nodos_ruta, s.estado_red])
+
+    anchos = [22, 22, 16, 14, 14, 12, 16, 22, 45]
+    for i, ancho in enumerate(anchos, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = ancho
+
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return send_file(buffer, as_attachment=True, download_name="aerovex_reporte.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@app.route("/flota")
+def flota():
+    # Desafío adicional: "Múltiples aeronaves en operación" -- toma varias
+    # rutas Activas al azar de la red actual y las anima todas a la vez sobre
+    # el mismo mapa, simulando una flota completa operando simultáneamente.
+    rutas_activas = Ruta.query.filter_by(estado="Activa").all()
+    rutas_unicas = [r for r in rutas_activas if r.origen_id < r.destino_id]
+    muestra = random.sample(rutas_unicas, min(5, len(rutas_unicas))) if rutas_unicas else []
+
+    vuelos = []
+    for i, r in enumerate(muestra):
+        o = Aeropuerto.query.get(r.origen_id)
+        d = Aeropuerto.query.get(r.destino_id)
+        vuelos.append({
+            "vuelo": "AVX" + str(101 + i),
+            "origen": {"lat": o.latitud, "lon": o.longitud, "codigo": o.codigo},
+            "destino": {"lat": d.latitud, "lon": d.longitud, "codigo": d.codigo},
+        })
+
+    return render_template("flota.html", vuelos=json.dumps(vuelos), total_activas=len(rutas_unicas))
+
+
 def inicializar_bd():
     # Aeropuertos: se crean solo si no existen (por código), nunca se sobreescriben.
     datos_aeropuertos = [
@@ -229,6 +358,8 @@ def inicializar_bd():
         ("CUE", "MARISCAL LAMAR", "Cuenca", -2.9001, -79.0045),
         ("GPS", "SEYMOUR BALTRA", "Galápagos", -0.4491, -90.2833),
         ("MEC", "ELOY ALFARO", "Manta", -0.9474, -80.6781),
+        ("BOG", "EL DORADO", "Bogotá", 4.7016, -74.1469),
+        ("LIM", "JORGE CHÁVEZ", "Lima", -12.0219, -77.1143),
     ]
     for cod, nom, ciu, lat, lon in datos_aeropuertos:
         if not Aeropuerto.query.filter_by(codigo=cod).first():
@@ -265,6 +396,10 @@ def inicializar_bd():
         # este vuelo directo -- antes no existía este arco y por eso
         # cualquier consulta UIO->GPS quedaba forzada a pasar por GYE.
         ("UIO", "GPS", 1330, 130, 340, 270),
+        # Rutas internacionales, ambas con vuelo directo real desde Quito
+        # (fuentes: flightconnections, distance.to, jul-2026).
+        ("UIO", "BOG", 715, 95, 159, 206),
+        ("UIO", "LIM", 1331, 125, 243, 263),
     ]
     for c1, c2, dist, tiem, cost, cons in datos_rutas:
         a1 = Aeropuerto.query.filter_by(codigo=c1).first()

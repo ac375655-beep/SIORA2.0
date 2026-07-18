@@ -1,0 +1,128 @@
+{% extends 'base.html' %}
+
+{% block extra_head %}
+<link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet" />
+{% endblock %}
+
+{% block content %}
+<div class="mb-4 text-center">
+    <div class="eyebrow mb-1">OPERACIONES EN VIVO</div>
+    <h3 class="display-heading mb-0">Flota AEROVEX</h3>
+    <div class="text-secondary" style="font-size:0.9rem;">{{ vuelos|length }} aeronave(s) simuladas en simultáneo sobre {{ total_activas }} ruta(s) activa(s)</div>
+</div>
+
+<div class="card p-2 position-relative" style="overflow:hidden;">
+    <div class="position-absolute top-0 start-0 m-3 eyebrow" style="z-index:500; background:rgba(6,10,20,0.75); padding:4px 10px; border-radius:6px; border:1px solid var(--border);">
+        RADAR · FLOTA COMPLETA
+    </div>
+    <div id="mapa-flota" style="height: 520px; border-radius: 8px;"></div>
+</div>
+
+{% if not vuelos or vuelos == '[]' %}
+<div class="text-center text-secondary mt-4">
+    No hay rutas Activas en este momento para simular la flota — revisa Gestión de Red.
+</div>
+{% endif %}
+
+<div class="row g-2 mt-3" id="lista-vuelos"></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+<script>
+    var vuelos = {{ vuelos | safe }};
+
+    var mapa = new maplibregl.Map({
+        container: 'mapa-flota',
+        style: {
+            version: 8,
+            sources: {
+                'carto-dark': {
+                    type: 'raster',
+                    tiles: [
+                        'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+                        'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+                        'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+                        'https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+                    ],
+                    tileSize: 256,
+                    attribution: '&copy; OpenStreetMap &copy; CARTO'
+                }
+            },
+            layers: [{ id: 'carto-dark-layer', type: 'raster', source: 'carto-dark', minzoom: 0, maxzoom: 20 }]
+        },
+        center: [-78.1834, -1.8312],
+        zoom: 4.2
+    });
+    mapa.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+    var colores = ['#22d3ee', '#fbbf24', '#34d399', '#f472b6', '#818cf8'];
+    var listaEl = document.getElementById('lista-vuelos');
+
+    mapa.on('load', function () {
+        if (!vuelos || vuelos.length === 0) return;
+
+        var todosLosPuntos = [];
+
+        vuelos.forEach(function (v, idx) {
+            var color = colores[idx % colores.length];
+            var origenLL = [v.origen.lon, v.origen.lat];
+            var destinoLL = [v.destino.lon, v.destino.lat];
+            todosLosPuntos.push(origenLL, destinoLL);
+
+            // Ruta de esta aeronave sobre el mapa
+            mapa.addSource('ruta-' + idx, {
+                type: 'geojson',
+                data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [origenLL, destinoLL] } }
+            });
+            mapa.addLayer({
+                id: 'ruta-linea-' + idx, type: 'line', source: 'ruta-' + idx,
+                layout: { 'line-join': 'round', 'line-cap': 'round' },
+                paint: { 'line-color': color, 'line-width': 3, 'line-dasharray': [2, 1.5], 'line-opacity': 0.75 }
+            });
+
+            [origenLL, destinoLL].forEach(function (ll, i) {
+                var elNodo = document.createElement('div');
+                elNodo.style.width = '10px'; elNodo.style.height = '10px'; elNodo.style.borderRadius = '50%';
+                elNodo.style.background = color; elNodo.style.border = '2px solid #060a14';
+                new maplibregl.Marker({ element: elNodo }).setLngLat(ll)
+                    .setPopup(new maplibregl.Popup({ offset: 10 }).setHTML("<b style='color:#0a0e1a;'>" + (i === 0 ? v.origen.codigo : v.destino.codigo) + "</b>"))
+                    .addTo(mapa);
+            });
+
+            // Avión de esta aeronave
+            var elAvion = document.createElement('div');
+            elAvion.style.fontSize = '20px';
+            elAvion.textContent = '✈️';
+            elAvion.style.filter = 'drop-shadow(0 0 4px ' + color + ')';
+            var marcador = new maplibregl.Marker({ element: elAvion }).setLngLat(origenLL).addTo(mapa);
+
+            var tarjeta = document.createElement('div');
+            tarjeta.className = 'col-6 col-md-4 col-lg-2';
+            tarjeta.innerHTML = '<div class="gauge" style="border-top-color:' + color + ';">' +
+                '<small class="gauge-label">' + v.vuelo + '</small>' +
+                '<span class="gauge-value" style="font-size:1rem; color:' + color + ';">' + v.origen.codigo + ' ➔ ' + v.destino.codigo + '</span></div>';
+            listaEl.appendChild(tarjeta);
+
+            // Animación independiente para cada avión, con velocidad y desfase distintos
+            var duracion = 12000 + idx * 2500;
+            var desfase = idx * 900;
+            function animarVuelo(timestamp, inicio) {
+                if (!inicio) inicio = timestamp;
+                var t = (((timestamp - inicio + desfase) % duracion) / duracion);
+                var lng = origenLL[0] + (destinoLL[0] - origenLL[0]) * t;
+                var lat = origenLL[1] + (destinoLL[1] - origenLL[1]) * t;
+                marcador.setLngLat([lng, lat]);
+                requestAnimationFrame(function (ts) { animarVuelo(ts, inicio); });
+            }
+            requestAnimationFrame(function (ts) { animarVuelo(ts, null); });
+        });
+
+        if (todosLosPuntos.length > 0) {
+            var lons = todosLosPuntos.map(function (p) { return p[0]; });
+            var lats = todosLosPuntos.map(function (p) { return p[1]; });
+            mapa.fitBounds([[Math.min.apply(null, lons), Math.min.apply(null, lats)], [Math.max.apply(null, lons), Math.max.apply(null, lats)]], { padding: 60 });
+        }
+    });
+</script>
+{% endblock %}

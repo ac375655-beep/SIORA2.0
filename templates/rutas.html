@@ -1,5 +1,9 @@
 {% extends 'base.html' %}
 
+{% block extra_head %}
+<link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet" />
+{% endblock %}
+
 {% block content %}
 <div class="mb-4 text-center">
     <div class="eyebrow mb-1">CONSOLA DE VUELO</div>
@@ -49,7 +53,7 @@
 
 <div class="card p-2 mb-4 position-relative" style="overflow:hidden;">
     <div class="position-absolute top-0 start-0 m-3 eyebrow" style="z-index:500; background:rgba(6,10,20,0.75); padding:4px 10px; border-radius:6px; border:1px solid var(--border);">
-        RADAR · RED AÉREA
+        RADAR 3D · RED AÉREA · arrastra para rotar
     </div>
     <div id="mapa" style="height: 420px; border-radius: 8px; z-index: 1;"></div>
 </div>
@@ -130,6 +134,11 @@
                 El tramo con clima adverso se penaliza +50% en tiempo, costo y combustible (holding pattern / maniobras de evasión). La distancia física no cambia.
             </div>
             {% endif %}
+            <div class="text-center mt-3">
+                <a href="/simulador3d?origen={{ origen_sel }}&destino={{ destino_sel }}&criterio={{ criterio_sel }}" class="btn btn-sm" style="border: 1px solid var(--amber); color: var(--amber); border-radius: 8px;" target="_blank">
+                    🎮 Ver vuelo en 3D (experimental)
+                </a>
+            </div>
         </div>
     </div>
 </div>
@@ -168,11 +177,37 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
 <script>
-    var map = L.map('mapa', { zoomControl: true }).setView([-1.8312, -78.1834], 6);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap'
-    }).addTo(map);
+    var map = new maplibregl.Map({
+        container: 'mapa',
+        style: {
+            version: 8,
+            sources: {
+                'carto-dark': {
+                    type: 'raster',
+                    tiles: [
+                        'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+                        'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+                        'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+                        'https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+                    ],
+                    tileSize: 256,
+                    attribution: '&copy; OpenStreetMap &copy; CARTO'
+                }
+            },
+            layers: [{ id: 'carto-dark-layer', type: 'raster', source: 'carto-dark', minzoom: 0, maxzoom: 20 }]
+        },
+        center: [-78.1834, -1.8312], // MapLibre usa [lng, lat] (al revés que Leaflet)
+        zoom: 5.3,
+        pitch: 55,      // inclinación de cámara: esto es lo que da el efecto 3D
+        bearing: -12,
+        antialias: true
+    });
+
+    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+    map.dragRotate.enable();
+    map.touchZoomRotate.enableRotation();
 
     var rutaDatos = {{ mapa_ruta | safe }};
 
@@ -186,73 +221,91 @@
         return (brng + 360) % 360;
     }
 
-    if (rutaDatos && rutaDatos.length > 0) {
-        var puntos = [];
+    map.on('load', function () {
+        if (!rutaDatos || rutaDatos.length === 0) return;
 
-        rutaDatos.forEach(function(nodo, idx) {
-            var latLng = [nodo.lat, nodo.lon];
-            puntos.push(latLng);
+        var puntos = []; // en formato [lng, lat] para MapLibre
+
+        rutaDatos.forEach(function(nodo) {
+            var lngLat = [nodo.lon, nodo.lat];
+            puntos.push(lngLat);
             var esClimaEntrante = nodo.clima;
-            var icono = L.divIcon({
-                html: '<div style="width:12px;height:12px;border-radius:50%;background:' + (esClimaEntrante ? '#fbbf24' : '#22d3ee') + ';box-shadow:0 0 8px ' + (esClimaEntrante ? '#fbbf24' : '#22d3ee') + ';border:2px solid #060a14;"></div>',
-                className: '', iconSize: [12,12], iconAnchor: [6,6]
-            });
-            L.marker(latLng, {icon: icono}).addTo(map)
-                .bindPopup("<b style='color:#0a0e1a;'>" + nodo.info + "</b>" + (esClimaEntrante ? "<br><span style='color:#b45309;'>⚠ Clima adverso en este tramo</span>" : ""));
+            var el = document.createElement('div');
+            el.style.width = '14px'; el.style.height = '14px'; el.style.borderRadius = '50%';
+            el.style.background = esClimaEntrante ? '#fbbf24' : '#22d3ee';
+            el.style.boxShadow = '0 0 10px ' + (esClimaEntrante ? '#fbbf24' : '#22d3ee');
+            el.style.border = '2px solid #060a14';
+
+            new maplibregl.Marker({ element: el })
+                .setLngLat(lngLat)
+                .setPopup(new maplibregl.Popup({ offset: 12 }).setHTML(
+                    "<b style='color:#0a0e1a;'>" + nodo.info + "</b>" +
+                    (esClimaEntrante ? "<br><span style='color:#b45309;'>⚠ Clima adverso en este tramo</span>" : "")
+                ))
+                .addTo(map);
         });
 
-        // Dibujar cada tramo por separado: cian normal, ámbar punteado si hay clima adverso
+        // Tramos de ruta como GeoJSON: cian normal, ámbar si el tramo tiene clima adverso
+        var features = [];
         for (var i = 0; i < puntos.length - 1; i++) {
-            var conClima = rutaDatos[i + 1].clima;
-            L.polyline([puntos[i], puntos[i+1]], {
-                color: conClima ? '#fbbf24' : '#22d3ee',
-                weight: 4,
-                dashArray: conClima ? '4, 8' : '10, 6',
-                opacity: 0.9
-            }).addTo(map);
+            features.push({
+                type: 'Feature',
+                properties: { clima: !!rutaDatos[i + 1].clima },
+                geometry: { type: 'LineString', coordinates: [puntos[i], puntos[i + 1]] }
+            });
         }
 
-        var bounds = L.latLngBounds(puntos);
-        map.fitBounds(bounds, {padding: [30, 30]});
-
-        // Avión animado: se orienta según el rumbo real de cada tramo
-        var avionIcon = L.divIcon({
-            html: '<div id="avion-rot" style="font-size: 26px; transform: rotate(0deg); transition: transform 0.3s;">✈️</div>',
-            className: 'avion-animado',
-            iconSize: [26, 26],
-            iconAnchor: [13, 13]
+        map.addSource('ruta-tramos', { type: 'geojson', data: { type: 'FeatureCollection', features: features } });
+        map.addLayer({
+            id: 'ruta-tramos-linea',
+            type: 'line',
+            source: 'ruta-tramos',
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+                'line-color': ['case', ['get', 'clima'], '#fbbf24', '#22d3ee'],
+                'line-width': 4,
+                'line-dasharray': ['case', ['get', 'clima'], ['literal', [1, 2]], ['literal', [3, 1.5]]],
+                'line-opacity': 0.9
+            }
         });
 
-        var avionMarker = L.marker(puntos[0], {icon: avionIcon}).addTo(map);
-        var i = 0;
+        // Encuadrar la ruta completa, conservando la inclinación 3D
+        var lngs = puntos.map(function(p) { return p[0]; });
+        var lats = puntos.map(function(p) { return p[1]; });
+        map.fitBounds([[Math.min.apply(null, lngs), Math.min.apply(null, lats)], [Math.max.apply(null, lngs), Math.max.apply(null, lats)]], { padding: 60 });
+        setTimeout(function () { map.easeTo({ pitch: 55, bearing: -12, duration: 800 }); }, 900);
 
+        // Avión animado: marcador con rotación real según el rumbo de cada tramo
+        var avionEl = document.createElement('div');
+        avionEl.style.fontSize = '26px';
+        avionEl.textContent = '✈️';
+        var avionMarker = new maplibregl.Marker({ element: avionEl, rotationAlignment: 'map' })
+            .setLngLat(puntos[0])
+            .addTo(map);
+
+        var i = 0;
         function animarAvion() {
             if (i < puntos.length - 1) {
-                var start = puntos[i];
-                var end = puntos[i+1];
-                var rumbo = calcularRumbo(start[0], start[1], end[0], end[1]);
-                var el = document.getElementById('avion-rot');
-                if (el) el.style.transform = 'rotate(' + (rumbo - 45) + 'deg)';
+                var start = puntos[i], end = puntos[i + 1];
+                var rumbo = calcularRumbo(start[1], start[0], end[1], end[0]);
+                avionMarker.setRotation(rumbo - 45);
 
-                var step = 0;
-                var numSteps = 60;
-
-                var intervalo = setInterval(function() {
+                var step = 0, numSteps = 60;
+                var intervalo = setInterval(function () {
                     if (step >= numSteps) {
                         clearInterval(intervalo);
                         i++;
                         animarAvion();
                     } else {
-                        var lat = start[0] + (end[0] - start[0]) * (step / numSteps);
-                        var lng = start[1] + (end[1] - start[1]) * (step / numSteps);
-                        avionMarker.setLatLng([lat, lng]);
+                        var lng = start[0] + (end[0] - start[0]) * (step / numSteps);
+                        var lat = start[1] + (end[1] - start[1]) * (step / numSteps);
+                        avionMarker.setLngLat([lng, lat]);
                         step++;
                     }
                 }, 20);
             }
         }
-
-        setTimeout(animarAvion, 500);
-    }
+        setTimeout(animarAvion, 1200);
+    });
 </script>
 {% endblock %}

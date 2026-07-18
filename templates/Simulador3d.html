@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AEROVEX · Simulación 3D</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #050a10; font-family: 'JetBrains Mono', monospace; }
+    #lienzo3d { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: block; }
+
+    .hud { position: fixed; z-index: 10; color: #e7ecf5; pointer-events: none; }
+    .hud a, .hud button { pointer-events: all; }
+
+    .hud-top {
+        top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: center;
+        padding: 14px 20px; background: linear-gradient(to bottom, rgba(5,10,16,0.85), transparent);
+    }
+    .hud-brand { font-family: 'Rajdhani', sans-serif; font-weight: 700; letter-spacing: 0.08em; color: #22d3ee; font-size: 1.1rem; }
+    .hud-volver { color: #8b98b5; text-decoration: none; border: 1px solid #1e293b; padding: 6px 14px; border-radius: 8px; font-family: 'Rajdhani', sans-serif; font-weight: 600; background: rgba(5,10,16,0.6); }
+    .hud-volver:hover { color: #22d3ee; border-color: #22d3ee; }
+    .hud-ruta { font-family: 'Rajdhani', sans-serif; font-weight: 700; letter-spacing: 0.05em; font-size: 1rem; color: #fff; text-shadow: 0 0 10px rgba(0,0,0,0.8); }
+
+    .hud-bottom {
+        bottom: 0; left: 0; right: 0; display: flex; justify-content: center; gap: 14px; flex-wrap: wrap;
+        padding: 16px 20px 22px 20px; background: linear-gradient(to top, rgba(5,10,16,0.85), transparent);
+    }
+    .instrumento {
+        background: rgba(10,15,25,0.72); backdrop-filter: blur(6px);
+        border: 1px solid #1e293b; border-top: 2px solid #22d3ee;
+        border-radius: 10px; padding: 8px 16px; text-align: center; min-width: 96px;
+    }
+    .instrumento.turbulencia { border-top-color: #fbbf24; }
+    .instrumento small { display: block; color: #8b98b5; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; font-family: 'Rajdhani', sans-serif; }
+    .instrumento span { font-weight: 700; font-size: 1.3rem; color: #e7ecf5; }
+
+    .barra-progreso-cont { position: fixed; top: 60px; left: 20px; right: 20px; z-index: 10; height: 4px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden; }
+    .barra-progreso { height: 100%; width: 0%; background: linear-gradient(90deg, #22d3ee, #34d399); transition: width 0.1s linear; }
+
+    .aviso-clima {
+        position: fixed; top: 90px; left: 50%; transform: translateX(-50%); z-index: 10;
+        background: rgba(251,191,36,0.15); border: 1px solid #fbbf24; color: #fbbf24;
+        padding: 6px 16px; border-radius: 20px; font-family: 'Rajdhani', sans-serif; font-weight: 700;
+        letter-spacing: 0.05em; opacity: 0; transition: opacity 0.4s;
+    }
+    .aviso-clima.activo { opacity: 1; }
+
+    .pantalla-carga { position: fixed; inset: 0; z-index: 20; background: #050a10; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #22d3ee; font-family: 'Rajdhani', sans-serif; font-weight: 700; letter-spacing: 0.1em; }
+</style>
+</head>
+<body>
+
+<div class="pantalla-carga" id="cargando">CARGANDO SIMULACIÓN 3D...</div>
+
+<canvas id="lienzo3d"></canvas>
+
+<div class="hud hud-top">
+    <div class="hud-brand">✈ AEROVEX · 3D</div>
+    <div class="hud-ruta" id="hud-ruta">-- ➔ --</div>
+    <a href="/rutas" class="hud-volver">← Volver al simulador</a>
+</div>
+
+<div class="barra-progreso-cont"><div class="barra-progreso" id="barra-progreso"></div></div>
+<div class="aviso-clima" id="aviso-clima">⚠ ATRAVESANDO CLIMA ADVERSO</div>
+
+<div class="hud hud-bottom">
+    <div class="instrumento"><small>Altitud</small><span id="hud-altitud">0</span></div>
+    <div class="instrumento"><small>Velocidad</small><span id="hud-velocidad">0</span></div>
+    <div class="instrumento"><small>Rumbo</small><span id="hud-rumbo">0°</span></div>
+    <div class="instrumento" id="inst-progreso"><small>Progreso</small><span id="hud-progreso">0%</span></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script>
+    var puntosOrigen = {{ puntos | safe }};
+    document.getElementById('hud-ruta').textContent = puntosOrigen.map(function(p){ return p.info; }).join(' ➔ ');
+
+    // --- Conversión simple de lat/lon a coordenadas locales de escena (no es proyección geográfica real, solo espaciado relativo) ---
+    var ESCALA = 90;
+    var refLat = puntosOrigen[0].lat, refLon = puntosOrigen[0].lon;
+    function a3d(lat, lon) {
+        return new THREE.Vector3((lon - refLon) * ESCALA, 0, (lat - refLat) * ESCALA);
+    }
+
+    var escena = new THREE.Scene();
+    escena.background = new THREE.Color(0x0a1220);
+    escena.fog = new THREE.Fog(0x0a1220, 60, 420);
+
+    var camara = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.5, 2000);
+    var renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('lienzo3d'), antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+    // Luces
+    escena.add(new THREE.AmbientLight(0x8899cc, 0.7));
+    var sol = new THREE.DirectionalLight(0xffffff, 1.0);
+    sol.position.set(150, 220, 100);
+    escena.add(sol);
+
+    // Océano (mar abierto entre aeropuertos)
+    var oceano = new THREE.Mesh(
+        new THREE.PlaneGeometry(6000, 6000),
+        new THREE.MeshStandardMaterial({ color: 0x0a3548, roughness: 0.35, metalness: 0.15 })
+    );
+    oceano.rotation.x = -Math.PI / 2;
+    escena.add(oceano);
+
+    var cuadricula = new THREE.GridHelper(3000, 120, 0x1c4a58, 0x11303b);
+    cuadricula.position.y = 0.05;
+    escena.add(cuadricula);
+
+    // Cordillera distante en el horizonte (montañas de fondo, puramente decorativas)
+    var matMontana = new THREE.MeshStandardMaterial({ color: 0x3a3550, roughness: 1 });
+    var matMontanaLejana = new THREE.MeshStandardMaterial({ color: 0x2a3550, roughness: 1, transparent: true, opacity: 0.7 });
+    for (var mnt = 0; mnt < 46; mnt++) {
+        var anguloM = (mnt / 46) * Math.PI * 2;
+        var radioM = 780 + Math.random() * 260;
+        var alturaM = 90 + Math.random() * 170;
+        var montana = new THREE.Mesh(
+            new THREE.ConeGeometry(90 + Math.random() * 70, alturaM, 5),
+            (radioM > 900 ? matMontanaLejana : matMontana)
+        );
+        montana.position.set(Math.cos(anguloM) * radioM, alturaM / 2 - 3, Math.sin(anguloM) * radioM);
+        montana.rotation.y = Math.random() * Math.PI;
+        escena.add(montana);
+    }
+
+    // Nubes simples (esferas achatadas semitransparentes)
+    for (var c = 0; c < 26; c++) {
+        var nube = new THREE.Mesh(
+            new THREE.SphereGeometry(6 + Math.random() * 10, 8, 8),
+            new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.22 })
+        );
+        nube.scale.y = 0.35;
+        nube.position.set((Math.random() - 0.5) * 900, 30 + Math.random() * 60, (Math.random() - 0.5) * 900);
+        escena.add(nube);
+    }
+
+    // Isla / masa de tierra bajo cada aeropuerto (para distinguir tierra de mar)
+    function crearIsla(posicion) {
+        var isla = new THREE.Mesh(
+            new THREE.CylinderGeometry(48, 60, 3, 16),
+            new THREE.MeshStandardMaterial({ color: 0x1f4d2e, roughness: 1 })
+        );
+        isla.position.set(posicion.x, -1.2, posicion.z);
+        escena.add(isla);
+    }
+
+    // --- Avión con silueta reconocible (fuselaje afilado, ventanas, motores, cola) ---
+    var avion = new THREE.Group();
+    var matFuselaje = new THREE.MeshStandardMaterial({ color: 0xf2f5fa, metalness: 0.25, roughness: 0.35 });
+    var matAcento = new THREE.MeshStandardMaterial({ color: 0x22d3ee, emissive: 0x0e5a66 });
+    var matVentanas = new THREE.MeshStandardMaterial({ color: 0x0a1220, roughness: 0.2 });
+    var matMotor = new THREE.MeshStandardMaterial({ color: 0x2a3548, metalness: 0.5, roughness: 0.3 });
+
+    var cuerpo = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.85, 5.2, 14), matFuselaje);
+    cuerpo.rotation.x = Math.PI / 2;
+    cuerpo.position.z = 0.3;
+    avion.add(cuerpo);
+
+    var narizAvion = new THREE.Mesh(new THREE.ConeGeometry(0.85, 2.0, 14), matFuselaje);
+    narizAvion.rotation.x = -Math.PI / 2;
+    narizAvion.position.z = -2.6;
+    avion.add(narizAvion);
+
+    var colaAfilada = new THREE.Mesh(new THREE.ConeGeometry(0.75, 2.6, 14), matFuselaje);
+    colaAfilada.rotation.x = Math.PI / 2;
+    colaAfilada.position.z = 4.2;
+    avion.add(colaAfilada);
+
+    [1, -1].forEach(function (lado) {
+        var ventanas = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.16, 4.4), matVentanas);
+        ventanas.position.set(lado * 0.84, 0.15, 0.2);
+        avion.add(ventanas);
+
+        var franja = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.1, 5.0), matAcento);
+        franja.position.set(lado * 0.86, -0.28, 0.3);
+        avion.add(franja);
+    });
+
+    function crearAla(signo) {
+        var grupoAla = new THREE.Group();
+        var ala = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.1, 1.7), matFuselaje);
+        ala.position.set(signo * 2.6, -0.1, 0.1);
+        ala.rotation.z = signo * 0.05;
+        ala.rotation.y = signo * -0.14;
+        grupoAla.add(ala);
+
+        var motor = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.38, 1.3, 10), matMotor);
+        motor.rotation.x = Math.PI / 2;
+        motor.position.set(signo * 2.3, -0.55, -0.5);
+        grupoAla.add(motor);
+        return grupoAla;
+    }
+    avion.add(crearAla(1));
+    avion.add(crearAla(-1));
+
+    [1, -1].forEach(function (signo) {
+        var estab = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.08, 0.75), matFuselaje);
+        estab.position.set(signo * 1.0, 0.15, 4.0);
+        estab.rotation.y = signo * -0.15;
+        avion.add(estab);
+    });
+
+    var aleta = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.5, 1.35), matAcento);
+    aleta.position.set(0, 0.9, 4.15);
+    aleta.rotation.x = -0.2;
+    avion.add(aleta);
+
+    escena.add(avion);
+
+    // --- Pista, marcas y una pequeña terminal en el aeropuerto de origen y el de destino ---
+    function crearAeropuerto(posicion, anguloY) {
+        crearIsla(posicion);
+
+        var grupo = new THREE.Group();
+        var pista = new THREE.Mesh(new THREE.PlaneGeometry(6, 42), new THREE.MeshStandardMaterial({ color: 0x1a2333, roughness: 0.95 }));
+        pista.rotation.x = -Math.PI / 2;
+        pista.position.y = 0.06;
+        grupo.add(pista);
+
+        for (var m = -18; m <= 18; m += 4.5) {
+            var marca = new THREE.Mesh(new THREE.PlaneGeometry(0.35, 1.8), new THREE.MeshStandardMaterial({ color: 0xdfe7ef }));
+            marca.rotation.x = -Math.PI / 2;
+            marca.position.set(0, 0.07, m);
+            grupo.add(marca);
+        }
+
+        // Terminal y torre bien separadas del eje de la pista, para que nunca queden
+        // cruzando la trayectoria de vuelo ni tapando la cámara al aterrizar.
+        var terminal = new THREE.Mesh(new THREE.BoxGeometry(4.5, 2.0, 2.6), new THREE.MeshStandardMaterial({ color: 0x16202f }));
+        terminal.position.set(16, 1.0, -6);
+        grupo.add(terminal);
+
+        var torre = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.6, 5, 8), new THREE.MeshStandardMaterial({ color: 0x16202f }));
+        torre.position.set(19.5, 2.5, -6);
+        grupo.add(torre);
+
+        var luzTorre = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 8), matAcento);
+        luzTorre.position.set(19.5, 5.1, -6);
+        grupo.add(luzTorre);
+
+        grupo.position.copy(posicion);
+        grupo.rotation.y = anguloY;
+        escena.add(grupo);
+    }
+
+    // --- Construir la curva de vuelo (con arco de altitud por cada tramo y rodaje en tierra al inicio/fin) ---
+    var ALTITUD_CRUCERO = 42;
+    var puntosCurva = [];
+    var climaPorSegmentoCurva = [];
+
+    for (var i = 0; i < puntosOrigen.length - 1; i++) {
+        var p0 = a3d(puntosOrigen[i].lat, puntosOrigen[i].lon);
+        var p1 = a3d(puntosOrigen[i + 1].lat, puntosOrigen[i + 1].lon);
+        var climaTramo = !!puntosOrigen[i + 1].clima;
+        var medio = p0.clone().lerp(p1, 0.5); medio.y = ALTITUD_CRUCERO;
+        var subida = p0.clone().lerp(p1, 0.22); subida.y = ALTITUD_CRUCERO * 0.75;
+        var bajada = p0.clone().lerp(p1, 0.78); bajada.y = ALTITUD_CRUCERO * 0.75;
+        var rodajeSalida = p0.clone().lerp(p1, 0.06); rodajeSalida.y = 0;
+        var rodajeLlegada = p0.clone().lerp(p1, 0.94); rodajeLlegada.y = 0;
+
+        if (i === 0) {
+            var previo = p0.clone().lerp(p1, -0.05); previo.y = 0;
+            puntosCurva.push(previo, p0.clone());
+            climaPorSegmentoCurva.push(climaTramo, climaTramo);
+        }
+        puntosCurva.push(rodajeSalida, subida, medio, bajada, rodajeLlegada, p1.clone());
+        for (var k = 0; k < 6; k++) climaPorSegmentoCurva.push(climaTramo);
+
+        if (i === puntosOrigen.length - 2) {
+            var salidaFinal = p1.clone().lerp(p0, -0.05); salidaFinal.y = 0;
+            puntosCurva.push(salidaFinal);
+            climaPorSegmentoCurva.push(climaTramo);
+        }
+    }
+
+    var curva = new THREE.CatmullRomCurve3(puntosCurva);
+    var LARGO_TRAMO = puntosOrigen.length - 1;
+
+    // Pista en cada aeropuerto de la ruta (origen, escalas y destino), orientada
+    // según el tramo de despegue o aterrizaje que le corresponde a cada uno.
+    var origenPos = a3d(puntosOrigen[0].lat, puntosOrigen[0].lon);
+    var dirSalida = puntosCurva[2].clone().add(origenPos.clone().multiplyScalar(-1));
+    crearAeropuerto(origenPos, Math.atan2(dirSalida.x, dirSalida.z));
+
+    var destinoPos = a3d(puntosOrigen[puntosOrigen.length - 1].lat, puntosOrigen[puntosOrigen.length - 1].lon);
+    var idxPenultimo = puntosCurva.length - 2;
+    var dirLlegada = destinoPos.clone().add(puntosCurva[idxPenultimo].clone().multiplyScalar(-1));
+    crearAeropuerto(destinoPos, Math.atan2(dirLlegada.x, dirLlegada.z));
+
+    for (var esc = 1; esc < puntosOrigen.length - 1; esc++) {
+        var posEscala = a3d(puntosOrigen[esc].lat, puntosOrigen[esc].lon);
+        crearAeropuerto(posEscala, Math.atan2(dirLlegada.x, dirLlegada.z));
+    }
+
+    // Encuadre inicial de cámara
+    var centroRuta = a3d((puntosOrigen[0].lat + puntosOrigen[puntosOrigen.length - 1].lat) / 2, (puntosOrigen[0].lon + puntosOrigen[puntosOrigen.length - 1].lon) / 2);
+    camara.position.set(centroRuta.x, 120, centroRuta.z + 150);
+    camara.lookAt(centroRuta.x, 0, centroRuta.z);
+
+    document.getElementById('cargando').style.display = 'none';
+
+    // --- Animación: avanza a lo largo de la curva, cámara persigue al avión ---
+    var DURACION_MS = 9000 * LARGO_TRAMO;
+    var inicio = null;
+
+    // El spline puede "rebasar" por debajo de 0 justo antes/después de tocar
+    // tierra (comportamiento normal de un Catmull-Rom con cambios bruscos de
+    // altura); se recorta aquí para que el avión NUNCA se meta bajo el suelo.
+    function posicionEnCurva(t) {
+        var tt = Math.max(0, Math.min(1, t));
+        var p = curva.getPointAt(tt);
+        if (p.y < 0) p.y = 0;
+        return p;
+    }
+
+    function animar(timestamp) {
+        if (!inicio) inicio = timestamp;
+        var t = ((timestamp - inicio) % DURACION_MS) / DURACION_MS;
+
+        var posicion = posicionEnCurva(t);
+
+        // Rumbo por diferencia finita entre dos puntos YA recortados al suelo,
+        // para que la orientación del avión sea estable justo al aterrizar
+        // (usar la tangente cruda del spline ahí puede "voltear" el avión).
+        var dt = 0.004;
+        var pAntes = posicionEnCurva(t - dt);
+        var pDespues = posicionEnCurva(t + dt);
+        var tangente = pDespues.clone().add(pAntes.clone().multiplyScalar(-1));
+        if (tangente.length() < 0.0001) tangente.set(0, 0, -1);
+        tangente.normalize();
+
+        avion.position.copy(posicion);
+        avion.lookAt(posicion.clone().add(tangente));
+
+        var offsetAtras = tangente.clone().multiplyScalar(-16);
+        var idxClima = Math.min(Math.floor(t * climaPorSegmentoCurva.length), climaPorSegmentoCurva.length - 1);
+        var enClima = climaPorSegmentoCurva[idxClima];
+
+        var shake = enClima ? (Math.random() - 0.5) * 0.6 : 0;
+        var posCam = posicion.clone().add(offsetAtras).add(new THREE.Vector3(shake, 7 + shake, shake));
+        camara.position.lerp(posCam, 0.12);
+        camara.lookAt(posicion.clone().add(new THREE.Vector3(0, 2, 0)));
+
+        escena.fog.color.set(enClima ? 0x2a2010 : 0x0a1220);
+        escena.fog.far = enClima ? 220 : 420;
+        document.getElementById('aviso-clima').className = enClima ? 'aviso-clima activo' : 'aviso-clima';
+        document.getElementById('inst-progreso').className = enClima ? 'instrumento turbulencia' : 'instrumento';
+
+        document.getElementById('hud-altitud').textContent = Math.round(posicion.y * 25) + ' ft';
+        document.getElementById('hud-velocidad').textContent = (enClima ? 210 : 260) + ' kt';
+        var rumboDeg = Math.round((Math.atan2(tangente.x, tangente.z) * 180 / Math.PI + 360) % 360);
+        document.getElementById('hud-rumbo').textContent = rumboDeg + '°';
+        document.getElementById('hud-progreso').textContent = Math.round(t * 100) + '%';
+        document.getElementById('barra-progreso').style.width = (t * 100) + '%';
+
+        renderer.render(escena, camara);
+        requestAnimationFrame(animar);
+    }
+    requestAnimationFrame(animar);
+
+    window.addEventListener('resize', function () {
+        camara.aspect = window.innerWidth / window.innerHeight;
+        camara.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+</script>
+</body>
+</html>
