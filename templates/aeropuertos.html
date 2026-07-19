@@ -28,7 +28,7 @@
                             <td class="data-readout fw-bold" style="color: var(--cyan);">{{ a.codigo }}</td>
                             <td>{{ a.ciudad }}</td>
                             <td class="text-secondary">{{ a.nombre }}</td>
-                            <td>
+                            <td class="celda-estado-aero">
                                 {% if a.estado == 'Abierto' %}
                                     <span class="badge-estado badge-abierto">Abierto</span>
                                 {% else %}
@@ -36,7 +36,7 @@
                                 {% endif %}
                             </td>
                             <td>
-                                <a href="/toggle_aeropuerto/{{ a.id }}" class="btn btn-sm btn-neon">Cambiar estado</a>
+                                <a href="/toggle_aeropuerto/{{ a.id }}" class="btn btn-sm btn-neon btn-toggle-aeropuerto">Cambiar estado</a>
                             </td>
                         </tr>
                         {% endfor %}
@@ -67,7 +67,7 @@
                         <tr>
                             <td class="data-readout fw-bold">{{ r.origen.codigo }} ➔ {{ r.destino.codigo }}</td>
                             <td class="data-readout text-secondary">{{ r.distancia }} km</td>
-                            <td>
+                            <td class="celda-estado-ruta">
                                 {% if r.estado == 'Activa' %}
                                     <span class="badge-estado badge-activa">Activa</span>
                                 {% elif r.estado == 'Clima Adverso' %}
@@ -77,7 +77,7 @@
                                 {% endif %}
                             </td>
                             <td>
-                                <form action="/estado_ruta/{{ r.id }}" method="POST" class="d-flex gap-2">
+                                <form action="/estado_ruta/{{ r.id }}" method="POST" class="d-flex gap-2 form-estado-ruta">
                                     <select name="estado" class="form-select form-select-sm" style="width: 160px;">
                                         <option value="Activa" {% if r.estado == 'Activa' %}selected{% endif %}>Activa</option>
                                         <option value="Clima Adverso" {% if r.estado == 'Clima Adverso' %}selected{% endif %}>Clima Adverso</option>
@@ -94,4 +94,63 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Cambiar estado de un aeropuerto SIN recargar la página: se hace la
+    // misma petición de siempre por detrás (fetch), y solo se actualiza la
+    // insignia de esa fila en el momento.
+    document.querySelectorAll('.btn-toggle-aeropuerto').forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            var url = btn.getAttribute('href');
+            var fila = btn.closest('tr');
+            var celda = fila.querySelector('.celda-estado-aero');
+            var estabaAbierto = celda.querySelector('.badge-abierto') !== null;
+
+            btn.disabled = true;
+            fetch(url, { method: 'GET' }).then(function (resp) {
+                if (resp.ok) {
+                    celda.innerHTML = estabaAbierto
+                        ? '<span class="badge-estado badge-cerrado">Cerrado</span>'
+                        : '<span class="badge-estado badge-abierto">Abierto</span>';
+                }
+            }).catch(function () {
+                alert('No se pudo cambiar el estado. Intenta de nuevo.');
+            }).finally(function () {
+                btn.disabled = false;
+            });
+        });
+    });
+
+    // Cambiar estado de una ruta (Activa / Clima Adverso / Inhabilitada) SIN
+    // recargar la página: la selección se queda ahí, aplicas cuantas quieras
+    // seguidas sin perder tu lugar en la tabla.
+    document.querySelectorAll('.form-estado-ruta').forEach(function (form) {
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
+            var fila = form.closest('tr');
+            var celda = fila.querySelector('.celda-estado-ruta');
+            var select = form.querySelector('select[name="estado"]');
+            var nuevoEstado = select.value;
+            var boton = form.querySelector('button');
+
+            boton.disabled = true;
+            fetch(form.getAttribute('action'), { method: 'POST', body: new FormData(form) }).then(function (resp) {
+                if (resp.ok) {
+                    var html;
+                    if (nuevoEstado === 'Activa') html = '<span class="badge-estado badge-activa">Activa</span>';
+                    else if (nuevoEstado === 'Clima Adverso') html = '<span class="badge-estado badge-clima">Clima adverso</span>';
+                    else html = '<span class="badge-estado badge-inhabilitada">Inhabilitada</span>';
+                    celda.innerHTML = html;
+                }
+            }).catch(function () {
+                alert('No se pudo aplicar el cambio. Intenta de nuevo.');
+            }).finally(function () {
+                boton.disabled = false;
+            });
+        });
+    });
+</script>
 {% endblock %}

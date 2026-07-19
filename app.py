@@ -232,30 +232,7 @@ def rutas():
                            origen_sel=origen_sel, destino_sel=destino_sel, criterio_sel=criterio_sel)
 
 
-@app.route("/simulador3d")
-def simulador3d():
-    # Página EXPERIMENTAL y aparte del simulador principal: reutiliza el mismo
-    # dijkstra() ya probado (misma lógica, mismos datos), solo cambia cómo se
-    # visualiza. Si esta vista falla, /rutas no se ve afectado en nada.
-    origen_id = request.args.get("origen", type=int)
-    destino_id = request.args.get("destino", type=int)
-    criterio = request.args.get("criterio", "Menor Distancia")
 
-    if not origen_id or not destino_id:
-        return redirect(url_for("rutas"))
-
-    nodos, rutas_opt, msj = dijkstra(origen_id, destino_id, criterio)
-    if not nodos:
-        return redirect(url_for("rutas"))
-
-    puntos_3d = []
-    for i, n in enumerate(nodos):
-        a = Aeropuerto.query.get(n)
-        clima = (rutas_opt[i - 1].estado == "Clima Adverso") if i > 0 else False
-        puntos_3d.append({"lat": a.latitud, "lon": a.longitud, "info": a.codigo, "ciudad": a.ciudad, "clima": clima})
-
-    return render_template("simulador3d.html", puntos=json.dumps(puntos_3d),
-                           origen_id=origen_id, destino_id=destino_id, criterio=criterio)
 
 
 @app.route("/exportar/pdf")
@@ -400,6 +377,8 @@ def inicializar_bd():
         # (fuentes: flightconnections, distance.to, jul-2026).
         ("UIO", "BOG", 715, 95, 159, 206),
         ("UIO", "LIM", 1331, 125, 243, 263),
+        ("GYE", "BOG", 993, 110, 198, 234),
+        ("GYE", "LIM", 1139, 115, 217, 244),
     ]
     for c1, c2, dist, tiem, cost, cons in datos_rutas:
         a1 = Aeropuerto.query.filter_by(codigo=c1).first()
