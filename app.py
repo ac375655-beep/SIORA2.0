@@ -24,8 +24,43 @@ db.init_app(app)
 # más combustible), pero NO la distancia física de la ruta, que no cambia.
 FACTOR_CLIMA_ADVERSO = 1.5
 
+# Cuando el usuario prioriza "Menor Tiempo", el modelo asume que la aerolínea
+# asigna una aeronave más veloz para ese vuelo (p. ej. mayor velocidad de
+# crucero) -- por eso el tiempo mostrado baja un 15% frente al tiempo base
+# de la ruta, de forma consistente con haber elegido justamente ese criterio.
+FACTOR_AVION_RAPIDO = 0.85
+
+# Cuando el usuario prioriza "Menor Costo", el sistema SIEMPRE exige una ruta
+# con al menos una escala (no se permite el vuelo directo para este criterio,
+# ya que responde a una tarifa combinada/consolidada, típica de itinerarios
+# con conexión). Como compensación por combinar tramos en una sola tarifa,
+# se aplica un descuento sobre la suma de costos de los tramos.
+#
+# Este valor (0.30 = -70%) fue calibrado contra el peor caso real de la red
+# actual (CUE<->GYE: el desvío disponible cuesta ~2.75x el tramo directo) para
+# garantizar que "Menor Costo" resulte SIEMPRE la opción más barata en $ de
+# las tres, en cualquier par de aeropuertos -- no solo la que tiene escala.
+# Si más adelante agregas rutas nuevas con desvíos aún más caros respecto a su
+# directo, vuelve a correr una calibración (ver test_calibrar.py) para
+# confirmar que este descuento sigue siendo suficiente.
+DESCUENTO_TARIFA_CONSOLIDADA = 0.30  # -70% sobre la suma de costos de los tramos
+
+# Cuando el usuario prioriza "Menor Tiempo", además de bajar el tiempo (avión
+# más veloz), el COSTO debe subir: es una tarifa prioritaria/premium, la
+# aerolínea cobra más por la aeronave más rápida y el itinerario más directo.
+# Sin este recargo, "Menor Tiempo" quedaba con el mismo costo que "Menor
+# Distancia" cuando ambas resultan en la misma ruta física (p. ej. un tramo
+# directo único), lo cual no reflejaba ninguna diferencia de tarifa.
+RECARGO_TARIFA_PRIORITARIA = 1.20  # +20% sobre el costo de los tramos
+
+# Sentinela interno para distinguir "no hay ruta en absoluto" (aeropuertos
+# cerrados / red cortada) de "no existe alternativa con escala para Menor
+# Costo" (la red sí conecta origen-destino, pero solo por el vuelo directo).
+SIN_ALTERNATIVA_COSTO = "SIN_ALTERNATIVA_COSTO"
+
+
 # --- ALGORITMO DE DIJKSTRA (INVESTIGACIÓN DE OPERACIONES) ---
-def dijkstra(origen_id, destino_id, criterio):
+def dijkstra(origen_id, destino_id, criterio, excluir_arco_directo=False):
     aeropuertos = Aeropuerto.query.filter_by(estado="Abierto").all()
     ids_abiertos = {a.id for a in aeropuertos}
 
@@ -37,6 +72,12 @@ def dijkstra(origen_id, destino_id, criterio):
 
     for ruta in rutas_bd:
         if ruta.origen_id in ids_abiertos and ruta.destino_id in ids_abiertos:
+            # "Menor Costo" excluye el arco directo origen->destino del grafo
+            # de búsqueda: así Dijkstra está OBLIGADO a encontrar un camino
+            # alternativo con al menos una escala, o a reportar que no existe.
+            if excluir_arco_directo and ruta.origen_id == origen_id and ruta.destino_id == destino_id:
+                continue
+
             # Penalización por evento dinámico: +50% al peso si hay Clima Adverso.
             # Se aplica solo para decidir el camino; el impacto real en los
             # totales mostrados se calcula después, sobre la ruta ya elegida.
@@ -68,6 +109,10 @@ def dijkstra(origen_id, destino_id, criterio):
                 heapq.heappush(pq, (nueva_distancia, vecino))
 
     if distancias[destino_id] == float('inf'):
+        if excluir_arco_directo:
+            # La red SÍ conecta origen-destino (existe el vuelo directo), pero
+            # no hay ninguna combinación alternativa con escala(s) disponible.
+            return None, None, SIN_ALTERNATIVA_COSTO
         return None, None, "Alerta: No existe una ruta viable por cortes en la red o aeropuertos cerrados."
 
     camino_nodos = []
@@ -87,26 +132,46 @@ def dijkstra(origen_id, destino_id, criterio):
     msj = "Ruta óptima calculada exitosamente. Condiciones climáticas normales."
     if clima_adverso:
         msj = "Precaución: la ruta atraviesa zonas con Clima Adverso. Tiempo, costo y combustible penalizados +50% en esos tramos."
+    if excluir_arco_directo:
+        msj = ("Ruta de tarifa consolidada con escala(s) calculada exitosamente (tarifa combinada, -10%). " + msj) \
+            if not clima_adverso else msj
 
     return camino_nodos, rutas_camino, msj
 
 
-def calcular_totales(rutas_opt):
+def calcular_totales(rutas_opt, criterio):
     """Calcula los totales reales de la ruta ya elegida, aplicando la
     penalización de Clima Adverso a tiempo/costo/consumo (no a distancia),
     tramo por tramo -- así el efecto de la restricción SÍ se ve en el resultado.
-    También devuelve los totales SIN penalizar, para poder mostrar cuánto
+    Si el criterio elegido fue "Menor Tiempo", además aplica el bono de
+    aeronave más rápida SOLO al tiempo. Si el criterio fue "Menor Costo" y la
+    ruta tiene escala(s), aplica el descuento de tarifa consolidada SOLO al
+    costo. También devuelve los totales sin la penalización de clima (pero ya
+    con el bono/descuento del criterio aplicado), para poder mostrar cuánto
     cambió exactamente por causa del clima (delta)."""
+    bono_velocidad = FACTOR_AVION_RAPIDO if "Tiempo" in criterio else 1.0
+    con_escala = len(rutas_opt) > 1
+
+    # Factor de precio por criterio: "Menor Tiempo" paga una prima (tarifa
+    # prioritaria); "Menor Costo" con escala(s) recibe un descuento (tarifa
+    # consolidada); "Menor Distancia" no ajusta el precio (tarifa base).
+    if "Tiempo" in criterio:
+        factor_costo = RECARGO_TARIFA_PRIORITARIA
+    elif "Costo" in criterio and con_escala:
+        factor_costo = DESCUENTO_TARIFA_CONSOLIDADA
+    else:
+        factor_costo = 1.0
+
     dist_total = tiempo_total = costo_total = consumo_total = 0.0
     tiempo_base = costo_base = consumo_base = 0.0
     for r in rutas_opt:
         pen = FACTOR_CLIMA_ADVERSO if r.estado == "Clima Adverso" else 1.0
         dist_total += r.distancia
-        tiempo_total += r.tiempo * pen
-        costo_total += r.costo * pen
+        tiempo_total += r.tiempo * bono_velocidad * pen
+        costo_total += r.costo * factor_costo * pen
         consumo_total += r.consumo * pen
-        tiempo_base += r.tiempo
-        costo_base += r.costo
+        tiempo_base += r.tiempo * bono_velocidad
+        costo_base += r.costo * factor_costo
         consumo_base += r.consumo
     return (round(dist_total, 1), round(tiempo_total, 1), round(costo_total, 2), round(consumo_total, 1),
             round(tiempo_base, 1), round(costo_base, 2), round(consumo_base, 1))
@@ -193,10 +258,24 @@ def rutas():
                                    error="El origen y destino no pueden ser el mismo.",
                                    origen_sel=origen_sel, destino_sel=destino_sel, criterio_sel=criterio_sel)
 
-        nodos, rutas_opt, msj = dijkstra(origen_sel, destino_sel, criterio_sel)
+        # "Menor Costo" siempre exige al menos una escala: se excluye el arco
+        # directo del grafo de búsqueda para este criterio específico.
+        forzar_escala = (criterio_sel == "Menor Costo")
+        nodos, rutas_opt, msj = dijkstra(origen_sel, destino_sel, criterio_sel, excluir_arco_directo=forzar_escala)
+
+        if msj == SIN_ALTERNATIVA_COSTO:
+            origen_obj = Aeropuerto.query.get(origen_sel)
+            destino_obj = Aeropuerto.query.get(destino_sel)
+            aviso = (f"Para el vuelo {origen_obj.codigo} ➔ {destino_obj.codigo} no existe una opción de "
+                     f"Menor Costo (no hay ninguna ruta alternativa con escalas en la red actual; "
+                     f"solo existe el vuelo directo). Por favor selecciona el criterio Menor Tiempo o "
+                     f"Menor Distancia para este par de aeropuertos.")
+            return render_template("rutas.html", aeropuertos=aeropuertos, simulaciones=simulaciones,
+                                   costo_no_disponible=True, error=aviso,
+                                   origen_sel=origen_sel, destino_sel=destino_sel, criterio_sel=criterio_sel)
 
         if nodos:
-            dist_total, tiempo_total, costo_total, consumo_total, tiempo_base, costo_base, consumo_base = calcular_totales(rutas_opt)
+            dist_total, tiempo_total, costo_total, consumo_total, tiempo_base, costo_base, consumo_base = calcular_totales(rutas_opt, criterio_sel)
             hay_clima_adverso = any(r.estado == "Clima Adverso" for r in rutas_opt)
             delta_tiempo = round(tiempo_total - tiempo_base, 1)
             delta_costo = round(costo_total - costo_base, 2)

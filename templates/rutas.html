@@ -12,7 +12,12 @@
 </div>
 
 <div class="card p-4 mb-4 panel-glow">
-    {% if error %}
+    {% if error and costo_no_disponible %}
+    <div class="alert mt-0 mb-3" role="alert" style="background-color: rgba(251,191,36,0.1); border: 1px solid var(--amber); color: var(--amber);">
+        <strong>⚠ Menor Costo no disponible para este vuelo</strong>
+        <div class="mt-1" style="font-size:0.92rem; color: var(--text);">{{ error }}</div>
+    </div>
+    {% elif error %}
     <div class="alert mt-0 mb-3" role="alert" style="background-color: rgba(248,113,113,0.1); border: 1px solid var(--red); color: var(--red);">
         <strong>⚠ {{ error }}</strong>
     </div>
@@ -42,7 +47,7 @@
             <select name="criterio" class="form-select" required>
                 <option value="Menor Distancia" {% if criterio_sel == 'Menor Distancia' %}selected{% endif %}>Menor distancia (km)</option>
                 <option value="Menor Tiempo" {% if criterio_sel == 'Menor Tiempo' %}selected{% endif %}>Menor tiempo de vuelo (min)</option>
-                <option value="Menor Costo" {% if criterio_sel == 'Menor Costo' %}selected{% endif %}>Menor costo operativo ($)</option>
+                <option value="Menor Costo" {% if criterio_sel == 'Menor Costo' %}selected{% endif %}>Menor costo operativo ($) · siempre con escala</option>
             </select>
         </div>
         <div class="col-12 text-center mt-4">
@@ -134,6 +139,15 @@
                 El tramo con clima adverso se penaliza +50% en tiempo, costo y combustible (holding pattern / maniobras de evasión). La distancia física no cambia.
             </div>
             {% endif %}
+            {% if criterio_sel == 'Menor Costo' %}
+            <div class="mt-3 text-secondary" style="font-size:0.85rem;">
+                Tarifa consolidada con escala(s): -70% sobre la suma de costos de los tramos combinados, para garantizar el precio más bajo de los tres criterios.
+            </div>
+            {% elif criterio_sel == 'Menor Tiempo' %}
+            <div class="mt-3 text-secondary" style="font-size:0.85rem;">
+                Tarifa prioritaria: +20% sobre el costo base por la aeronave más veloz y el itinerario más directo.
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>
@@ -174,6 +188,47 @@
 {% block scripts %}
 <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
 <script>
+    // Sonidos sintetizados con Web Audio (sin archivos externos que puedan
+    // fallar al cargar). "despegue": barrido de tono ascendente tipo turbina.
+    // "alerta": doble tono de aviso cuando hay clima adverso en la ruta.
+    function reproducirSonido(tipo) {
+        try {
+            var Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) return;
+            var ctx = new Ctx();
+
+            if (tipo === 'despegue') {
+                var osc = ctx.createOscillator();
+                var gain = ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(110, ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(420, ctx.currentTime + 1.1);
+                gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.14, ctx.currentTime + 0.25);
+                gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 1.3);
+                osc.connect(gain).connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 1.4);
+            } else if (tipo === 'alerta') {
+                [880, 660].forEach(function (freq, i) {
+                    var osc = ctx.createOscillator();
+                    var gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.value = freq;
+                    var inicio = ctx.currentTime + i * 0.2;
+                    gain.gain.setValueAtTime(0.0001, inicio);
+                    gain.gain.exponentialRampToValueAtTime(0.13, inicio + 0.03);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, inicio + 0.28);
+                    osc.connect(gain).connect(ctx.destination);
+                    osc.start(inicio);
+                    osc.stop(inicio + 0.3);
+                });
+            }
+        } catch (e) {
+            // Si el navegador bloquea audio (autoplay) o no lo soporta, se sigue sin sonido.
+        }
+    }
+
     var map = new maplibregl.Map({
         container: 'mapa',
         style: {
@@ -300,7 +355,13 @@
                 }, 20);
             }
         }
-        setTimeout(animarAvion, 1200);
+        setTimeout(function () {
+            reproducirSonido('despegue');
+            {% if hay_clima_adverso %}
+            setTimeout(function () { reproducirSonido('alerta'); }, 900);
+            {% endif %}
+            animarAvion();
+        }, 1200);
     });
 </script>
 {% endblock %}
