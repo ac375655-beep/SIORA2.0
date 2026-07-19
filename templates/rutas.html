@@ -47,7 +47,7 @@
             <select name="criterio" class="form-select" required>
                 <option value="Menor Distancia" {% if criterio_sel == 'Menor Distancia' %}selected{% endif %}>Menor distancia (km)</option>
                 <option value="Menor Tiempo" {% if criterio_sel == 'Menor Tiempo' %}selected{% endif %}>Menor tiempo de vuelo (min)</option>
-                <option value="Menor Costo" {% if criterio_sel == 'Menor Costo' %}selected{% endif %}>Menor costo operativo ($) · siempre con escala</option>
+                <option value="Menor Costo" {% if criterio_sel == 'Menor Costo' %}selected{% endif %}>Menor costo operativo ($)</option>
             </select>
         </div>
         <div class="col-12 text-center mt-4">
@@ -188,46 +188,6 @@
 {% block scripts %}
 <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
 <script>
-    // Sonidos sintetizados con Web Audio (sin archivos externos que puedan
-    // fallar al cargar). "despegue": barrido de tono ascendente tipo turbina.
-    // "alerta": doble tono de aviso cuando hay clima adverso en la ruta.
-    function reproducirSonido(tipo) {
-        try {
-            var Ctx = window.AudioContext || window.webkitAudioContext;
-            if (!Ctx) return;
-            var ctx = new Ctx();
-
-            if (tipo === 'despegue') {
-                var osc = ctx.createOscillator();
-                var gain = ctx.createGain();
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(110, ctx.currentTime);
-                osc.frequency.exponentialRampToValueAtTime(420, ctx.currentTime + 1.1);
-                gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.14, ctx.currentTime + 0.25);
-                gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 1.3);
-                osc.connect(gain).connect(ctx.destination);
-                osc.start();
-                osc.stop(ctx.currentTime + 1.4);
-            } else if (tipo === 'alerta') {
-                [880, 660].forEach(function (freq, i) {
-                    var osc = ctx.createOscillator();
-                    var gain = ctx.createGain();
-                    osc.type = 'sine';
-                    osc.frequency.value = freq;
-                    var inicio = ctx.currentTime + i * 0.2;
-                    gain.gain.setValueAtTime(0.0001, inicio);
-                    gain.gain.exponentialRampToValueAtTime(0.13, inicio + 0.03);
-                    gain.gain.exponentialRampToValueAtTime(0.0001, inicio + 0.28);
-                    osc.connect(gain).connect(ctx.destination);
-                    osc.start(inicio);
-                    osc.stop(inicio + 0.3);
-                });
-            }
-        } catch (e) {
-            // Si el navegador bloquea audio (autoplay) o no lo soporta, se sigue sin sonido.
-        }
-    }
 
     var map = new maplibregl.Map({
         container: 'mapa',
@@ -356,10 +316,6 @@
             }
         }
         setTimeout(function () {
-            reproducirSonido('despegue');
-            {% if hay_clima_adverso %}
-            setTimeout(function () { reproducirSonido('alerta'); }, 900);
-            {% endif %}
             animarAvion();
         }, 1200);
     });

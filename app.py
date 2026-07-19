@@ -53,6 +53,14 @@ DESCUENTO_TARIFA_CONSOLIDADA = 0.30  # -70% sobre la suma de costos de los tramo
 # directo único), lo cual no reflejaba ninguna diferencia de tarifa.
 RECARGO_TARIFA_PRIORITARIA = 1.20  # +20% sobre el costo de los tramos
 
+# Cuando el usuario prioriza "Menor Tiempo", el avión más veloz no solo cuesta
+# más (RECARGO_TARIFA_PRIORITARIA): también quema más combustible por km, ya
+# que volar a mayor velocidad de crucero implica más empuje y más arrastre
+# aerodinámico. Sin este factor, dos rutas físicamente idénticas (p. ej. un
+# mismo tramo directo) mostraban el mismo combustible en "Menor Tiempo" y
+# "Menor Distancia", aunque una sea, por definición, más rápida que la otra.
+FACTOR_CONSUMO_TIEMPO = 1.15  # +15% de combustible por volar más rápido
+
 # Sentinela interno para distinguir "no hay ruta en absoluto" (aeropuertos
 # cerrados / red cortada) de "no existe alternativa con escala para Menor
 # Costo" (la red sí conecta origen-destino, pero solo por el vuelo directo).
@@ -83,7 +91,15 @@ def dijkstra(origen_id, destino_id, criterio, excluir_arco_directo=False):
             # totales mostrados se calcula después, sobre la ruta ya elegida.
             penalizacion = FACTOR_CLIMA_ADVERSO if ruta.estado == "Clima Adverso" else 1.0
 
-            if "Distancia" in criterio: peso = ruta.distancia * penalizacion
+            # La distancia física NO cambia por el clima, así que "Menor
+            # Distancia" busca el camino ignorando la penalización de clima
+            # (usa el km real). Solo "Menor Tiempo" y "Menor Costo" consideran
+            # el +50% de clima al decidir la ruta, porque ahí sí conviene
+            # evitar la tormenta. Antes, la penalización se aplicaba también
+            # al peso de "Menor Distancia", lo que podía hacer que el
+            # algoritmo prefiriera un desvío objetivamente MÁS LARGO en km
+            # reales solo porque el tramo directo estaba marcado con clima.
+            if "Distancia" in criterio: peso = ruta.distancia
             elif "Tiempo" in criterio: peso = ruta.tiempo * penalizacion
             else: peso = ruta.costo * penalizacion
 
@@ -162,6 +178,10 @@ def calcular_totales(rutas_opt, criterio):
     else:
         factor_costo = 1.0
 
+    # Factor de combustible por criterio: "Menor Tiempo" quema más por volar
+    # más rápido (más empuje/arrastre), incluso sobre la misma ruta física.
+    factor_consumo = FACTOR_CONSUMO_TIEMPO if "Tiempo" in criterio else 1.0
+
     dist_total = tiempo_total = costo_total = consumo_total = 0.0
     tiempo_base = costo_base = consumo_base = 0.0
     for r in rutas_opt:
@@ -169,10 +189,10 @@ def calcular_totales(rutas_opt, criterio):
         dist_total += r.distancia
         tiempo_total += r.tiempo * bono_velocidad * pen
         costo_total += r.costo * factor_costo * pen
-        consumo_total += r.consumo * pen
+        consumo_total += r.consumo * factor_consumo * pen
         tiempo_base += r.tiempo * bono_velocidad
         costo_base += r.costo * factor_costo
-        consumo_base += r.consumo
+        consumo_base += r.consumo * factor_consumo
     return (round(dist_total, 1), round(tiempo_total, 1), round(costo_total, 2), round(consumo_total, 1),
             round(tiempo_base, 1), round(costo_base, 2), round(consumo_base, 1))
 
