@@ -2,6 +2,31 @@
 
 {% block extra_head %}
 <link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet" />
+<style>
+    #sim3d-overlay {
+        display: none; position: fixed; inset: 0; z-index: 2000;
+        background: #060a14; flex-direction: column;
+    }
+    #sim3d-viewport { position: absolute; inset: 0; }
+    #sim3d-viewport canvas { display: block; width: 100%; height: 100%; }
+    .sim3d-hud {
+        position: absolute; z-index: 10; font-family: var(--font-mono);
+        color: var(--text); pointer-events: none;
+    }
+    .sim3d-hud-panel {
+        background: rgba(6,10,20,0.72); border: 1px solid var(--border);
+        border-radius: 8px; padding: 10px 16px; backdrop-filter: blur(4px);
+    }
+    #sim3d-top { top: 16px; left: 16px; right: 16px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+    #sim3d-close { pointer-events: all; cursor: pointer; }
+    #sim3d-bottom { bottom: 16px; left: 16px; right: 16px; }
+    .sim3d-progreso-track { height: 5px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden; margin-top: 8px; }
+    .sim3d-progreso-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--cyan), var(--green)); transition: width 0.1s linear; }
+    #sim3d-fin {
+        display: none; position: absolute; inset: 0; z-index: 20; align-items: center; justify-content: center;
+        flex-direction: column; gap: 16px; background: rgba(6,10,20,0.55);
+    }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -148,9 +173,72 @@
                 Tarifa prioritaria: +20% sobre el costo base por la aeronave más veloz y el itinerario más directo.
             </div>
             {% endif %}
+            <div class="text-center mt-4">
+                <button type="button" id="btn-sim3d" class="btn btn-neon px-4 py-2" disabled
+                        onclick="window.iniciarSimulacion3D(window.AEROVEX_RUTA_ACTUAL, window.AEROVEX_CRITERIO_ACTUAL)">
+                    Cargando motor 3D...
+                </button>
+            </div>
         </div>
     </div>
 </div>
+
+<div id="sim3d-overlay">
+    <div id="sim3d-viewport"></div>
+    <div id="sim3d-top" class="sim3d-hud">
+        <div class="sim3d-hud-panel">
+            <div class="eyebrow" style="font-size:0.7rem;">AEROVEX · SIMULACIÓN DE VUELO</div>
+            <div class="data-readout fw-bold fs-5" id="sim3d-ruta">-- ➔ --</div>
+            <div class="text-secondary" style="font-size:0.8rem;" id="sim3d-criterio"></div>
+        </div>
+        <div class="sim3d-hud-panel" style="pointer-events:all; cursor:pointer;" id="sim3d-close" onclick="window.cerrarSimulacion3D()">
+            ✕ Cerrar
+        </div>
+    </div>
+    <div class="sim3d-hud-panel sim3d-hud" style="top:16px; left:50%; transform:translateX(-50%); text-align:center;">
+        <div class="eyebrow" style="font-size:0.7rem;" id="sim3d-fase">DESPEGUE</div>
+        <span class="badge-estado badge-clima" id="sim3d-clima" style="display:none; margin-top:4px;">Clima adverso</span>
+    </div>
+    <div id="sim3d-bottom" class="sim3d-hud">
+        <div class="sim3d-hud-panel">
+            <div class="row text-center g-2">
+                <div class="col-4">
+                    <small class="gauge-label">Tramo</small>
+                    <div class="data-readout" id="sim3d-tramo">Tramo 1 / 1</div>
+                </div>
+                <div class="col-4">
+                    <small class="gauge-label">Altitud</small>
+                    <div class="data-readout" id="sim3d-alt">0 m</div>
+                </div>
+                <div class="col-4">
+                    <small class="gauge-label">Velocidad</small>
+                    <div class="data-readout" id="sim3d-vel">0 km/h</div>
+                </div>
+            </div>
+            <div class="sim3d-progreso-track"><div class="sim3d-progreso-fill" id="sim3d-progreso"></div></div>
+        </div>
+    </div>
+    <div id="sim3d-fin">
+        <div class="eyebrow" style="font-size:1rem; color:var(--green);">✔ Vuelo AEROVEX completado</div>
+        <div>
+            <button type="button" class="btn btn-neon px-4 py-2 me-2" onclick="window.repetirSimulacion3D()">↻ Repetir</button>
+            <button type="button" class="btn btn-neon px-4 py-2" onclick="window.cerrarSimulacion3D()">✕ Cerrar</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    window.AEROVEX_RUTA_ACTUAL = {{ mapa_ruta | safe }};
+    window.AEROVEX_CRITERIO_ACTUAL = {{ criterio_sel | tojson }};
+    window.addEventListener('aerovex3d-ready', function () {
+        var btn = document.getElementById('btn-sim3d');
+        if (btn) { btn.disabled = false; btn.textContent = '🎬 Ver simulación 3D del vuelo'; }
+    });
+</script>
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+<script type="module" src="{{ url_for('static', filename='js/simulador3d.js') }}"></script>
 {% endif %}
 
 {% if simulaciones %}
