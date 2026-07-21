@@ -150,8 +150,16 @@
             var select = form.querySelector('select[name="estado"]');
             var nuevoEstado = select.value;
 
+            // IMPORTANTE: el FormData se arma ANTES de deshabilitar el select.
+            // Un <select> deshabilitado no se incluye en FormData, así que si
+            // se deshabilita primero, el campo "estado" viaja vacío al
+            // servidor y la ruta se guarda con estado nulo (y siempre
+            // termina mostrándose como "Inhabilitada" al recargar).
+            var datosFormulario = new FormData(form);
+            datosFormulario.set('estado', nuevoEstado); // refuerzo extra, por si acaso
+
             select.disabled = true;
-            fetch(form.getAttribute('action'), { method: 'POST', body: new FormData(form) }).then(function (resp) {
+            fetch(form.getAttribute('action'), { method: 'POST', body: datosFormulario }).then(function (resp) {
                 if (resp.ok) {
                     var html;
                     if (nuevoEstado === 'Activa') html = '<span class="badge-estado badge-activa">Activa</span>';
