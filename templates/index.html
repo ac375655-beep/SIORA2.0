@@ -75,16 +75,11 @@
         to { opacity: 1; transform: translateY(0); }
     }
     .perfil-card {
-        animation: fadeIn 0.8s ease-out forwards;
-        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        animation: fadeIn 0.8s ease-out both;
         background-color: rgba(10, 15, 25, 0.7); 
         backdrop-filter: blur(8px); 
         border: 1px solid rgba(0, 212, 255, 0.2);
-    }
-    .perfil-card:hover {
-        transform: translateY(-10px);
-        box-shadow: 0 10px 25px rgba(0, 212, 255, 0.4) !important;
-        border-color: #00d4ff !important;
+        transition: border-color 0.3s ease, box-shadow 0.3s ease;
     }
     .img-perfil {
         width: 120px;
@@ -93,6 +88,29 @@
         border: 3px solid #00d4ff;
         border-radius: 50%;
         margin-bottom: 15px;
+    }
+
+    /* ================= TARJETAS CON REVERSO (clic para ver más) ================= */
+    .flip-card {
+        cursor: pointer;
+        height: 100%;
+        outline: none;
+        transition: transform 0.3s ease;
+    }
+    .flip-card:hover, .flip-card:focus-visible { transform: translateY(-8px); }
+    .flip-card-front, .flip-card-back {
+        height: 100%;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    @keyframes apareceSuave { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+    .flip-card-back { animation: apareceSuave 0.3s ease; }
+    .flip-hint {
+        font-family: var(--font-display); font-size: 0.68rem; letter-spacing: 0.08em;
+        text-transform: uppercase; color: var(--cyan); opacity: 0.75; margin-top: 12px;
+    }
+    .flip-card:hover .perfil-card, .flip-card:focus-visible .perfil-card {
+        border-color: #00d4ff !important;
+        box-shadow: 0 10px 25px rgba(0, 212, 255, 0.4) !important;
     }
 
     /* ================= NUEVO: ESTILOS PARA MEJORAR LECTURA DE TEXTOS ================= */
@@ -105,12 +123,23 @@
         margin-bottom: 2rem;
     }
 
+    @keyframes haloEntrada {
+        from { opacity: 0; transform: translateY(-16px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .halo-oscuro { animation: haloEntrada 0.9s ease-out both; }
+
+    @keyframes respirarTitulo {
+        0%, 100% { text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.9), 0 0 20px rgba(0, 0, 0, 0.8); }
+        50% { text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.9), 0 0 34px rgba(34, 211, 238, 0.55); }
+    }
     .titulo-principal {
         color: #ffffff;
         font-weight: 800;
         letter-spacing: 2px;
-        /* Sombra negra fuerte para separar del fondo brillante */
+        /* Sombra negra fuerte para separar del fondo brillante, con respiración cian */
         text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.9), 0 0 20px rgba(0, 0, 0, 0.8);
+        animation: respirarTitulo 3.6s ease-in-out infinite;
     }
 
     .subtitulo-principal {
@@ -122,6 +151,14 @@
     .titulo-equipo {
         color: #ffffff;
         text-shadow: 2px 2px 5px rgba(0, 0, 0, 0.9);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .nodo, .avion-1, .avion-2, .avion-3, .perfil-card, .halo-oscuro, .titulo-principal, .flip-card, .flip-card-back {
+            animation: none !important;
+            transition: none !important;
+        }
+        .perfil-card, .halo-oscuro { opacity: 1; transform: none; }
     }
 </style>
 
@@ -163,12 +200,20 @@
             
             {% for p in equipo %}
             <div class="col-md-3">
-                <div class="card p-4 perfil-card h-100">
-                    <img src="{{ url_for('static', filename='images/' + p.img) }}" class="img-perfil mx-auto" alt="{{ p.nombre }}">
-                    <h5 class="text-info fw-bold">{{ p.nombre }}</h5>
-                    <p class="text-light mb-1">Edad: <span class="text-white">{{ p.edad }} años</span></p>
-                    <p class="text-light mb-0">Carrera: <span class="text-white">Ing. Industrial</span></p>
-                    <small class="text-secondary mt-3">Universidad Técnica del Norte</small>
+                <div class="flip-card no-reveal" style="animation-delay: {{ loop.index0 * 0.18 }}s;" tabindex="0" role="button" aria-label="Ver más información de {{ p.nombre }}">
+                    <div class="flip-card-front card p-4 perfil-card no-reveal">
+                        <img src="{{ url_for('static', filename='images/' + p.img) }}" class="img-perfil mx-auto" alt="{{ p.nombre }}">
+                        <h5 class="text-info fw-bold mb-1 text-center">{{ p.nombre }}</h5>
+                        <small class="text-secondary">Ing. Industrial</small>
+                        <span class="flip-hint">🔄 Toca para más info</span>
+                    </div>
+                    <div class="flip-card-back card p-4 perfil-card no-reveal text-center" style="display:none;">
+                        <div class="eyebrow mb-3">Ficha de tripulante</div>
+                        <p class="text-light mb-1">Edad: <span class="text-white fw-bold">{{ p.edad }} años</span></p>
+                        <p class="text-light mb-1">Carrera: <span class="text-white">Ing. Industrial</span></p>
+                        <small class="text-secondary mt-2">Universidad Técnica del Norte</small>
+                        <span class="flip-hint">🔄 Toca para volver</span>
+                    </div>
                 </div>
             </div>
             {% endfor %}
@@ -176,4 +221,23 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Voltea la tarjeta (muestra/oculta cada cara) al hacer clic o con Enter/Espacio
+    document.querySelectorAll('.flip-card').forEach(function (tarjeta) {
+        var frente = tarjeta.querySelector('.flip-card-front');
+        var reverso = tarjeta.querySelector('.flip-card-back');
+        function voltear() {
+            var mostrandoFrente = reverso.style.display === 'none';
+            frente.style.display = mostrandoFrente ? 'none' : '';
+            reverso.style.display = mostrandoFrente ? '' : 'none';
+        }
+        tarjeta.addEventListener('click', voltear);
+        tarjeta.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); voltear(); }
+        });
+    });
+</script>
 {% endblock %}

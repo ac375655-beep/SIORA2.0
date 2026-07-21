@@ -16,12 +16,20 @@
     .sim3d-hud-panel {
         background: rgba(6,10,20,0.72); border: 1px solid var(--border);
         border-radius: 8px; padding: 10px 16px; backdrop-filter: blur(4px);
+        animation: entradaCascada 0.5s cubic-bezier(.2,.8,.3,1.15) both;
     }
     #sim3d-top { top: 16px; left: 16px; right: 16px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-    #sim3d-close { pointer-events: all; cursor: pointer; }
+    #sim3d-close { pointer-events: all; cursor: pointer; transition: transform 0.2s ease, color 0.2s ease; }
+    #sim3d-close:hover { transform: scale(1.06); color: var(--cyan); }
     #sim3d-bottom { bottom: 16px; left: 16px; right: 16px; }
     .sim3d-progreso-track { height: 5px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden; margin-top: 8px; }
-    .sim3d-progreso-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--cyan), var(--green)); transition: width 0.1s linear; }
+    .sim3d-progreso-fill {
+        height: 100%; width: 0%; background: linear-gradient(90deg, var(--cyan), var(--green));
+        background-size: 200% 100%;
+        transition: width 0.1s linear;
+        animation: progresoBrillo 2s linear infinite;
+    }
+    @keyframes progresoBrillo { 0% { background-position: 0% 0; } 100% { background-position: -200% 0; } }
     #sim3d-fin {
         display: none; position: absolute; inset: 0; z-index: 20; align-items: center; justify-content: center;
         flex-direction: column; gap: 16px; background: rgba(6,10,20,0.55);
@@ -69,19 +77,38 @@
         </div>
         <div class="col-md-4">
             <label class="form-label">Criterio de optimización</label>
-            <select name="criterio" class="form-select" required>
+            <select name="criterio" id="criterio-select" class="form-select" required>
                 <option value="Menor Distancia" {% if criterio_sel == 'Menor Distancia' %}selected{% endif %}>Menor distancia (km)</option>
                 <option value="Menor Tiempo" {% if criterio_sel == 'Menor Tiempo' %}selected{% endif %}>Menor tiempo de vuelo (min)</option>
                 <option value="Menor Costo" {% if criterio_sel == 'Menor Costo' %}selected{% endif %}>Menor costo operativo ($)</option>
             </select>
         </div>
-        <div class="col-12 text-center mt-4">
+        <div class="col-12">
+            <small id="criterio-desc" class="text-secondary d-block" style="font-size:0.8rem;"></small>
+        </div>
+        <div class="col-12 text-center mt-2">
             <button type="submit" class="btn btn-neon px-5 py-2 fs-5">✈ Calcular ruta óptima</button>
         </div>
     </form>
 </div>
 
-<div class="card p-2 mb-4 position-relative" style="overflow:hidden;">
+<script>
+    // Descripción en vivo del criterio elegido, sin necesidad de calcular la ruta
+    (function () {
+        var descripciones = {
+            'Menor Distancia': '📏 Prioriza la ruta con menos kilómetros totales, sin importar tiempo ni escalas.',
+            'Menor Tiempo': '⏱ Prioriza la ruta más rápida, aunque el costo sea mayor (tarifa prioritaria +20%).',
+            'Menor Costo': '💲 Prioriza el precio más bajo, aunque tome más tiempo (tarifa consolidada -70% con escalas).'
+        };
+        var select = document.getElementById('criterio-select');
+        var desc = document.getElementById('criterio-desc');
+        function actualizar() { desc.textContent = descripciones[select.value] || ''; }
+        select.addEventListener('change', actualizar);
+        actualizar();
+    })();
+</script>
+
+<div class="card p-2 mb-4 position-relative radar-sweep" style="overflow:hidden;">
     <div class="position-absolute top-0 start-0 m-3 eyebrow" style="z-index:500; background:rgba(6,10,20,0.75); padding:4px 10px; border-radius:6px; border:1px solid var(--border);">
         RADAR 3D · RED AÉREA · arrastra para rotar
     </div>
@@ -113,20 +140,20 @@
 
             <div class="row g-3 text-center">
                 <div class="col-6 col-md-4 col-lg-2">
-                    <div class="gauge">
+                    <div class="gauge entra-cascada" style="animation-delay: 0ms;" data-bs-toggle="tooltip" data-bs-placement="top" title="Número de aeropuertos intermedios en los que la ruta hace conexión.">
                         <small class="gauge-label">Escalas</small>
                         <span class="gauge-value">{{ escalas }}</span>
                     </div>
                 </div>
                 <div class="col-6 col-md-4 col-lg-2">
-                    <div class="gauge">
+                    <div class="gauge entra-cascada" style="animation-delay: 80ms;" data-bs-toggle="tooltip" data-bs-placement="top" title="Suma de kilómetros de todos los tramos de la ruta.">
                         <small class="gauge-label">Distancia</small>
                         <span class="gauge-value">{{ detalle.distancia_total }}</span>
                         <small class="gauge-unit">km</small>
                     </div>
                 </div>
                 <div class="col-6 col-md-4 col-lg-2">
-                    <div class="gauge {{ 'gauge-warn' if delta_tiempo else '' }}">
+                    <div class="gauge entra-cascada {{ 'gauge-warn' if delta_tiempo else '' }}" style="animation-delay: 160ms;" data-bs-toggle="tooltip" data-bs-placement="top" title="Minutos totales de vuelo, incluyendo penalización por clima adverso si aplica.">
                         <small class="gauge-label">Tiempo</small>
                         <span class="gauge-value">{{ detalle.tiempo_total }}</span>
                         <small class="gauge-unit">min</small>
@@ -134,14 +161,14 @@
                     </div>
                 </div>
                 <div class="col-6 col-md-4 col-lg-2">
-                    <div class="gauge {{ 'gauge-warn' if delta_costo else '' }}">
+                    <div class="gauge entra-cascada {{ 'gauge-warn' if delta_costo else '' }}" style="animation-delay: 240ms;" data-bs-toggle="tooltip" data-bs-placement="top" title="Costo operativo total estimado para esta ruta, según el criterio elegido.">
                         <small class="gauge-label">Costo</small>
                         <span class="gauge-value">${{ detalle.costo_total }}</span>
                         {% if delta_costo %}<small class="gauge-delta">+${{ delta_costo }}</small>{% endif %}
                     </div>
                 </div>
                 <div class="col-6 col-md-4 col-lg-2">
-                    <div class="gauge {{ 'gauge-warn' if delta_consumo else '' }}">
+                    <div class="gauge entra-cascada {{ 'gauge-warn' if delta_consumo else '' }}" style="animation-delay: 320ms;" data-bs-toggle="tooltip" data-bs-placement="top" title="Galones de combustible estimados para completar toda la ruta.">
                         <small class="gauge-label">Combustible</small>
                         <span class="gauge-value">{{ detalle.consumo_total }}</span>
                         <small class="gauge-unit">gal</small>
@@ -149,7 +176,7 @@
                     </div>
                 </div>
                 <div class="col-6 col-md-4 col-lg-2">
-                    <div class="gauge {{ 'gauge-warn' if en_riesgo else '' }}">
+                    <div class="gauge entra-cascada {{ 'gauge-warn' if en_riesgo else '' }}" style="animation-delay: 400ms;" data-bs-toggle="tooltip" data-bs-placement="top" title="Indica si algún tramo de la ruta tiene clima adverso activo en este momento.">
                         <small class="gauge-label">Estado</small>
                         {% if en_riesgo %}
                             <span class="fw-bold" style="color: var(--amber);">⚠ Penalizado</span>
@@ -175,7 +202,7 @@
             {% endif %}
             <div class="text-center mt-4">
                 <button type="button" id="btn-sim3d" class="btn btn-neon px-4 py-2" disabled
-                        onclick="window.iniciarSimulacion3D(window.AEROVEX_RUTA_ACTUAL, window.AEROVEX_CRITERIO_ACTUAL)">
+                        onclick="this.classList.remove('btn-listo'); window.iniciarSimulacion3D(window.AEROVEX_RUTA_ACTUAL, window.AEROVEX_CRITERIO_ACTUAL)">
                     Cargando motor 3D...
                 </button>
             </div>
@@ -232,7 +259,7 @@
     window.AEROVEX_CRITERIO_ACTUAL = {{ criterio_sel | tojson }};
     window.addEventListener('aerovex3d-ready', function () {
         var btn = document.getElementById('btn-sim3d');
-        if (btn) { btn.disabled = false; btn.textContent = '🎬 Ver simulación 3D del vuelo'; }
+        if (btn) { btn.disabled = false; btn.textContent = '🎬 Ver simulación 3D del vuelo'; btn.classList.add('btn-listo'); }
     });
 </script>
 <script type="importmap">
@@ -249,7 +276,7 @@
             <thead><tr><th>Ruta</th><th>Criterio</th><th>Dist.</th><th>Tiempo</th><th>Costo</th><th>Estado</th></tr></thead>
             <tbody>
                 {% for s in simulaciones %}
-                <tr>
+                <tr class="fila-animada" style="--i: {{ loop.index0 }};">
                     <td class="data-readout">{{ s.nodos_ruta }}</td>
                     <td class="text-secondary">{{ s.criterio }}</td>
                     <td class="data-readout">{{ s.distancia_total }} km</td>
